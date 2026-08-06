@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
+
 from skillcheck.audit import AuditResult, LibraryAuditor
 from skillcheck.config import AppConfig
 from skillcheck.decisions import RuleDecision, RuleDecisionEngine
@@ -76,10 +78,10 @@ class SkillCheckService:
     def scan(self, *, cwd: Path | str | None = None) -> ScanResult:
         inventory = discover_skills(self.config, cwd=cwd)
         skills = inventory.unique_skills
-        existing = {
+        existing: dict[str, np.ndarray] = {
             row.skill_id: row.vector for row in self.store.get_vector_rows(model=self.embedding.model_id)
         }
-        vectors = dict(existing)
+        vectors: dict[str, np.ndarray] = dict(existing)
         to_embed = [skill for skill in skills if self.store.needs_embedding(skill, self.embedding.model_id)]
         if to_embed:
             encoded = self.embedding.encode([skill_embedding_text(skill) for skill in to_embed])
@@ -112,7 +114,7 @@ class SkillCheckService:
         if not skills:
             raise RuntimeError("Skill index is empty; run skillcheck scan first")
         vector_rows = self.store.get_vector_rows(model=self.embedding.model_id)
-        vectors = {row.skill_id: row.vector for row in vector_rows}
+        vectors: dict[str, np.ndarray] = {row.skill_id: row.vector for row in vector_rows}
         findings = {skill.skill_id: self._findings(skill) for skill in skills}
         audit = LibraryAuditor(self.config.thresholds.top_k, self.decision_engine).audit(
             skills,

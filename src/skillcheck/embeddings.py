@@ -48,7 +48,7 @@ class SentenceTransformerBackend:
 
     def __init__(self, model_name: str, *, device: str | None = None) -> None:
         try:
-            from sentence_transformers import SentenceTransformer
+            from sentence_transformers import SentenceTransformer  # type: ignore[import-not-found]
         except ImportError as exc:
             raise EmbeddingUnavailable(
                 "sentence-transformers is not installed; install skillcheck[local-embedding]"

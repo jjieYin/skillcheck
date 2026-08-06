@@ -1,6 +1,14 @@
-import numpy as np
+import sys
 
-from skillcheck.embeddings import HashEmbeddingBackend, skill_embedding_text
+import numpy as np
+import pytest
+
+from skillcheck.embeddings import (
+    EmbeddingUnavailable,
+    HashEmbeddingBackend,
+    SentenceTransformerBackend,
+    skill_embedding_text,
+)
 from skillcheck.models import SkillRecord
 from skillcheck.retrieval import cosine_top_k
 
@@ -42,3 +50,9 @@ def test_skill_embedding_text_contains_governance_fields() -> None:
     assert "api-check" in text
     assert "http-client" in text
     assert "network-read" in text
+
+
+def test_optional_sentence_transformer_backend_reports_missing_dependency(monkeypatch) -> None:
+    monkeypatch.setitem(sys.modules, "sentence_transformers", None)
+    with pytest.raises(EmbeddingUnavailable):
+        SentenceTransformerBackend("local-model")

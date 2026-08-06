@@ -41,3 +41,22 @@ def test_unavailable_skillspector_is_a_capability_finding(tmp_path: Path) -> Non
     adapter = SkillSpectorAdapter(command="definitely-not-installed-skillspector")
     findings = adapter.scan(root)
     assert any(f.rule_id == "CAP001" for f in findings)
+
+
+def test_skillspector_json_output_is_mapped(monkeypatch, tmp_path: Path) -> None:
+    import subprocess
+
+    import skillcheck.skillspector as module
+
+    root = write_skill(tmp_path / "safe", body="This is a sufficiently long safe body.")
+    monkeypatch.setattr(module.shutil, "which", lambda command: command)
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0], 0, stdout='{"findings":[{"rule":"SPC001","severity":"high","message":"review","path":"SKILL.md","remediation":"inspect"}]}', stderr=""
+        ),
+    )
+    findings = SkillSpectorAdapter(command="skillspector").scan(root)
+    assert findings[0].rule_id == "SPC001"
+    assert findings[0].severity == Severity.HIGH

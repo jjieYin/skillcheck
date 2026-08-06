@@ -75,10 +75,10 @@ class OpenAICompatibleClient:
             from openai import OpenAI
         except ImportError as exc:
             raise RuntimeError("openai package is required for remote LLM review") from exc
-        kwargs = {"api_key": api_key, "timeout": timeout}
         if base_url:
-            kwargs["base_url"] = base_url
-        self._client = OpenAI(**kwargs)
+            self._client = OpenAI(api_key=api_key, timeout=timeout, base_url=base_url)
+        else:
+            self._client = OpenAI(api_key=api_key, timeout=timeout)
 
     def complete(self, *, system: str, user: str) -> str:
         response = self._client.chat.completions.create(

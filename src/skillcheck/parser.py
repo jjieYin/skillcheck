@@ -31,7 +31,10 @@ def parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
         raise SkillParseError("SKILL.md frontmatter is missing its closing --- marker")
 
     raw_metadata = "".join(lines[1:closing_index])
-    metadata = yaml.safe_load(raw_metadata) or {}
+    try:
+        metadata = yaml.safe_load(raw_metadata) or {}
+    except yaml.YAMLError as exc:
+        raise SkillParseError("SKILL.md frontmatter is not valid YAML") from exc
     if not isinstance(metadata, dict):
         raise SkillParseError("SKILL.md frontmatter must be a YAML mapping")
     return dict(metadata), "".join(lines[closing_index + 1 :])

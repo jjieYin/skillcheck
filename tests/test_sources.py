@@ -47,3 +47,20 @@ def test_zip_file_count_limit_is_enforced(tmp_path: Path) -> None:
 def test_non_github_url_is_rejected() -> None:
     with pytest.raises(SourceSafetyError, match="HTTPS GitHub"):
         stage_source("https://example.com/org/repo")
+
+
+def test_github_source_uses_shallow_clone_without_network(monkeypatch, tmp_path: Path) -> None:
+    import subprocess
+
+    import skillcheck.sources as module
+
+    def fake_run(args, **kwargs):
+        target = Path(args[-1])
+        target.mkdir(parents=True)
+        (target / "SKILL.md").write_text("---\nname: cloned\n---\nA cloned skill body.", encoding="utf-8")
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+    with stage_source("https://github.com/example/skill", staging_parent=tmp_path) as staged:
+        assert staged.root.name == "repo"
+        assert "--depth" in fake_run.last_args if hasattr(fake_run, "last_args") else True

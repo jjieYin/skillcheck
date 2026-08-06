@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -46,7 +46,7 @@ class LibraryAuditor:
     def audit(
         self,
         skills: Iterable[SkillRecord],
-        vectors: dict[str, Iterable[float] | np.ndarray],
+        vectors: Mapping[str, Iterable[float] | np.ndarray],
         *,
         findings: list[Finding] | dict[str, list[Finding]],
         provider: Provider | str | None = None,
@@ -108,7 +108,10 @@ class LibraryAuditor:
                     continue
                 if skill.content_hash == by_id[candidate.skill_id].content_hash:
                     continue
-                pair = tuple(sorted((skill.skill_id, candidate.skill_id)))
+                pair: tuple[str, str] = (
+                    min(skill.skill_id, candidate.skill_id),
+                    max(skill.skill_id, candidate.skill_id),
+                )
                 if pair in pair_evidence:
                     continue
                 target = by_id[candidate.skill_id]
