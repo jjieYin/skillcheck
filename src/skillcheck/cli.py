@@ -1,5 +1,6 @@
-from skillcheck import __version__
 import typer
+
+from skillcheck import __version__
 
 
 app = typer.Typer(no_args_is_help=True)
