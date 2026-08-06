@@ -8,8 +8,9 @@ import typer
 
 from skillcheck import __version__
 from skillcheck.config import load_or_create_config
+from skillcheck.installer import InstallBlocked, Installer
 from skillcheck.llm import LLMReviewer, OpenAICompatibleClient
-from skillcheck.models import Decision
+from skillcheck.models import CheckReport, Decision
 from skillcheck.reports import ReportWriter
 from skillcheck.service import build_service
 
@@ -152,6 +153,41 @@ def check(
 
 
 @app.command()
+def install(
+    report_id: str = typer.Argument(..., help="检查报告 ID"),
+    target: str = typer.Option(..., "--target", help="codex、claude、agents 或 cursor"),
+    name: str | None = typer.Option(None, "--name", help="显式安装名称"),
+    yes: bool = typer.Option(False, "--yes", help="跳过交互确认（仍要求显式命令参数）"),
+    config: Path | None = typer.Option(None, "--config", help="配置文件路径"),
+) -> None:
+    """Install only a previously checked, hash-matching Skill."""
+    try:
+        loaded = load_or_create_config(config)
+        paths = ReportWriter(loaded.reports_path).find(report_id)
+        report = CheckReport.model_validate_json(paths.json.read_text(encoding="utf-8"))
+        target_root = _provider_target_root(target, loaded)
+        if not yes:
+            confirmed = typer.confirm(
+                f"确认将 {report.source} 安装到 {target_root}？（决策：{report.decision.value}）"
+            )
+        else:
+            confirmed = True
+        installed = Installer().install(
+            report,
+            target_root=target_root,
+            confirmed=confirmed,
+            name=name,
+        )
+        typer.echo(f"已安装到：{installed}")
+    except InstallBlocked as exc:
+        typer.echo(f"安装已阻断：{exc}", err=True)
+        raise typer.Exit(code=2) from exc
+    except Exception as exc:
+        typer.echo(f"安装失败：{exc}", err=True)
+        raise typer.Exit(code=3) from exc
+
+
+@app.command()
 def report(
     action: str = typer.Argument(..., help="latest、show 或 open"),
     report_id: str | None = typer.Argument(None, help="show/open 使用的报告 ID"),
@@ -219,3 +255,16 @@ def _open_report(path: Path) -> None:
         startfile(str(path))
     else:
         typer.echo(str(path))
+
+
+def _provider_target_root(provider: str, config) -> Path:
+    normalized = provider.casefold()
+    if normalized not in {"codex", "claude", "agents", "cursor"}:
+        raise ValueError("target must be codex, claude, agents, or cursor")
+    for configured in [*config.scan_paths, *config.extra_paths]:
+        parts = {part.casefold() for part in configured.parts}
+        if f".{normalized}" in parts:
+            return configured.expanduser().resolve()
+    home = Path.home()
+    leaf = "rules" if normalized == "cursor" else "skills"
+    return (home / f".{normalized}" / leaf).resolve()
