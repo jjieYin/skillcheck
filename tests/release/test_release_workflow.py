@@ -20,3 +20,9 @@ def test_release_workflow_validates_manifest_hashes_before_publish() -> None:
     assert "sha256sum" in WORKFLOW
     assert "asset_name" in WORKFLOW
     assert "fail_on_unmatched_files: true" in WORKFLOW
+
+
+def test_release_workflow_rejects_version_mismatched_binary() -> None:
+    assert 'version_output="$($executable version)"' in WORKFLOW
+    assert 'grep -F "skillcheck ${version}"' in WORKFLOW
+    assert "release version mismatch" in WORKFLOW
