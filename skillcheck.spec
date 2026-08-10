@@ -11,7 +11,9 @@ a = Analysis(
     ["src/skillcheck/app/main.py"],
     pathex=["src"],
     binaries=[],
-    datas=[],
+    datas=[
+        ("src/skillcheck/reviewers/schemas/agent-review.schema.json", "skillcheck/reviewers/schemas"),
+    ],
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
