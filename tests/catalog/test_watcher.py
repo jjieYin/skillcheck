@@ -44,9 +44,9 @@ def test_watcher_keeps_warning_when_watch_factory_fails(tmp_path: Path) -> None:
 
 
 def test_watcher_reports_startup_failure_before_start_returns(tmp_path: Path) -> None:
-    def broken_watch(*args, **kwargs):
-        raise OSError("watch unavailable")
-        yield  # pragma: no cover
+    def broken_watch(*args, startup_ready, **kwargs):
+        startup_ready("watch unavailable")
+        yield set()
 
     watcher = CatalogWatcher([tmp_path], lambda _: None, watch_factory=broken_watch)
 

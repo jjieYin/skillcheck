@@ -15,7 +15,9 @@ from skillcheck.mcp.tools import SkillcheckQueries
 TOOL_NAMES = {"skillcheck_summary", "skillcheck_groups", "skillcheck_report"}
 
 
-def create_server(queries: SkillcheckQueries | None = None) -> FastMCP:
+def create_server(
+    queries: SkillcheckQueries | None = None, runtime: McpRuntime | None = None
+) -> FastMCP:
     if queries is None:
         config = load_or_create_config()
         queries = SkillcheckQueries(FileRepositories(config.reports_path))
@@ -23,14 +25,20 @@ def create_server(queries: SkillcheckQueries | None = None) -> FastMCP:
 
     @server.tool(name="skillcheck_summary", description="读取最近一次 Skill 治理摘要")
     def skillcheck_summary() -> dict[str, object]:
+        if runtime is not None:
+            runtime.before_query()
         return queries.summary()
 
     @server.tool(name="skillcheck_groups", description="读取重复、重叠和冲突分组的脱敏证据")
     def skillcheck_groups(relation: str | None = None, limit: int = 20) -> list[dict[str, object]]:
+        if runtime is not None:
+            runtime.before_query()
         return queries.groups(relation=relation, limit=limit)
 
     @server.tool(name="skillcheck_report", description="读取指定报告的脱敏结果")
     def skillcheck_report(report_id: str) -> dict[str, object]:
+        if runtime is not None:
+            runtime.before_query()
         return queries.report(report_id)
 
     return server
@@ -42,6 +50,6 @@ def run_stdio(config_path: Path | str | None = None) -> None:
     runtime = McpRuntime(config)
     runtime.start()
     try:
-        create_server(queries).run("stdio")
+        create_server(queries, runtime=runtime).run("stdio")
     finally:
         runtime.stop()

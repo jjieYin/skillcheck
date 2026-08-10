@@ -126,6 +126,8 @@ class McpRuntime:
     def status(self) -> RuntimeStatus:
         warning = self.watcher.warning if self.watcher is not None else None
         warnings = [*self._warnings, *([warning] if warning and warning not in self._warnings else [])]
+        if self.watcher is not None and getattr(self.watcher, "startup_pending", False):
+            warnings.append("watcher startup is pending")
         initialized = self.config.catalog.initialized
         watching = bool(self.watcher and self.watcher.running)
         state: Literal["ready", "not_initialized", "degraded"]
