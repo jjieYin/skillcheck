@@ -1,4 +1,4 @@
-# PyInstaller one-folder build specification for Windows x64.
+# PyInstaller one-folder build specification for native Windows, Linux, and macOS builds.
 from PyInstaller.utils.hooks import collect_submodules
 
 
