@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from skillcheck.installation.executor import InstallationExecutor
 from skillcheck.installation.planner import InstallationPlanner
 from skillcheck.models import CheckReport, InstallationPlan
+from skillcheck.models.review import AgentReview
 
 
 class AddRequest(BaseModel):
@@ -25,6 +26,7 @@ class PreparedAdd:
     report: CheckReport
     plan: InstallationPlan
     paths: Any = None
+    agent_review: AgentReview | None = None
 
 
 class AddPipeline:
@@ -34,13 +36,16 @@ class AddPipeline:
         checker,
         planner: InstallationPlanner,
         executor: InstallationExecutor,
+        review_pipeline=None,
     ) -> None:
         self.checker = checker
         self.planner = planner
         self.executor = executor
+        self.review_pipeline = review_pipeline
 
     def prepare(self, request: AddRequest) -> PreparedAdd:
-        check_kwargs = {"use_llm": request.review != "none"}
+        use_direct_llm = request.review not in {"none", "codex", "claude"}
+        check_kwargs = {"use_llm": use_direct_llm}
         if request.top_k is not None:
             check_kwargs["top_k"] = request.top_k
         result = self.checker.check(request.source, **check_kwargs)
@@ -49,7 +54,25 @@ class AddPipeline:
             targets=request.targets,
             target_paths=request.target_paths,
         )
-        return PreparedAdd(report=result.report, plan=plan, paths=getattr(result, "paths", None))
+        agent_review = None
+        if self.review_pipeline is not None and request.review in {"codex", "claude"}:
+            group = {
+                "group_id": result.report.report_id,
+                "relation": "MANUAL_REVIEW",
+                "member_skill_ids": [candidate.skill.skill_id for candidate in result.report.candidates],
+                "evidence": [finding.model_dump(mode="json") for finding in result.report.findings],
+            }
+            agent_review = self.review_pipeline.review(
+                result.report.report_id,
+                [group],
+                request.review,
+            )
+        return PreparedAdd(
+            report=result.report,
+            plan=plan,
+            paths=getattr(result, "paths", None),
+            agent_review=agent_review,
+        )
 
     def execute(self, prepared: PreparedAdd) -> list[Path]:
         self.planner.validate(prepared.plan, approval_token=prepared.plan.approval_token)

@@ -7,7 +7,7 @@ import typer
 
 from skillcheck.config import load_or_create_config
 from skillcheck.models import Decision
-from skillcheck.pipelines.add_pipeline import AddPipeline, AddRequest
+from skillcheck.pipelines.add_pipeline import AddRequest
 from skillcheck.pipelines.scan_pipeline import ReviewMode
 
 
@@ -33,7 +33,7 @@ def register(app: typer.Typer) -> None:
     @app.command("add")
     def add(
         source: Annotated[str, typer.Argument(help="目录、ZIP 或 GitHub URL")],
-        target: Annotated[list[str], typer.Option("--target", "-t")] = [],
+        target: Annotated[list[str] | None, typer.Option("--target", "-t")] = None,
         review: Annotated[ReviewMode, typer.Option("--review")] = ReviewMode.NONE,
         check_only: Annotated[bool, typer.Option("--check-only")] = False,
         yes: Annotated[bool, typer.Option("--yes")] = False,
@@ -56,6 +56,10 @@ def register(app: typer.Typer) -> None:
         typer.echo(f"来源哈希：{prepared.report.source_hash}")
         if getattr(prepared, "paths", None) is not None:
             typer.echo(f"报告：{prepared.paths.markdown}")
+        if getattr(prepared, "agent_review", None) is not None:
+            typer.echo(f"Agent 复核：{prepared.agent_review.status.value}")
+            if prepared.agent_review.error:
+                typer.echo(f"复核提示：{prepared.agent_review.error}")
         if check_only:
             return
         if prepared.report.decision not in {Decision.PASS, Decision.APPROVE, Decision.VARIANT, Decision.MODIFY}:

@@ -8,7 +8,6 @@ from typing import Any
 
 from skillcheck.reviewers.base import ReviewExecution
 
-
 MAX_OUTPUT_CHARS = 200_000
 
 

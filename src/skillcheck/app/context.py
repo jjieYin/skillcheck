@@ -5,14 +5,20 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from skillcheck.config import AppConfig, load_or_create_config
+from skillcheck.config import load_or_create_config
 from skillcheck.installation.executor import InstallationExecutor
 from skillcheck.installation.planner import InstallationPlanner
 from skillcheck.models.report import ScanOutcome, ScanRun
 from skillcheck.models.review import AgentReview, ReviewStatus
 from skillcheck.pipelines.add_pipeline import AddPipeline
+from skillcheck.pipelines.review_pipeline import ReviewPipeline
 from skillcheck.pipelines.scan_pipeline import ScanPipeline
 from skillcheck.reports import ReportBuilder
+from skillcheck.reviewers.claude import ClaudeReviewAdapter
+from skillcheck.reviewers.codex import CodexReviewAdapter
+from skillcheck.reviewers.packet import build_packets
+from skillcheck.reviewers.registry import ReviewRegistry
+from skillcheck.reviewers.validation import validate_agent_output
 from skillcheck.service import SkillCheckService, build_service
 
 
@@ -109,6 +115,24 @@ class NoAgentReview:
         )
 
 
+def build_review_pipeline(config) -> ReviewPipeline:
+    registry = ReviewRegistry(
+        [
+            CodexReviewAdapter(timeout_seconds=config.review.timeout_seconds),
+            ClaudeReviewAdapter(timeout_seconds=config.review.timeout_seconds),
+        ]
+    )
+    return ReviewPipeline(
+        registry,
+        validator=validate_agent_output,
+        packet_builder=lambda groups: build_packets(
+            groups,
+            max_groups=config.review.max_groups_per_request,
+            allow_full_text=config.review.allow_full_text,
+        ),
+    )
+
+
 class OutcomeFactory:
     def scan(self, run, inventory, analysis, review, final_report) -> ScanOutcome:
         return ScanOutcome(
@@ -137,7 +161,7 @@ def build_scan_pipeline(config_path: Path | str | None = None) -> ScanPipeline:
     context.skills = LegacySkills()
     context.auditor = LegacyAuditor(service)
     context.reports = ReportBuilder(config.reports_path)
-    context.review_pipeline = NoAgentReview()
+    context.review_pipeline = build_review_pipeline(config)
     context.outcomes = OutcomeFactory()
     pipeline = ScanPipeline(context)
     pipeline.config = config
@@ -151,6 +175,7 @@ def build_add_pipeline(config_path: Path | str | None = None) -> AddPipeline:
         checker=service,
         planner=InstallationPlanner(staging_parent=config.staging_path),
         executor=InstallationExecutor(),
+        review_pipeline=build_review_pipeline(config),
     )
     pipeline.config = config
     return pipeline

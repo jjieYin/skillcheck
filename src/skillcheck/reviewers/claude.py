@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from skillcheck.reviewers.base import ReviewCapability, ReviewExecution
 from skillcheck.reviewers.codex import _resolve_cli

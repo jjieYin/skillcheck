@@ -34,6 +34,12 @@ class BaseReport:
     def report_id(self) -> str:
         return self.document.report_id
 
+    def with_review(self, review: AgentReview) -> BaseReport:
+        """Return the same local analysis with only the review layer replaced."""
+
+        document = self.document.model_copy(update={"agent_review": review})
+        return BaseReport(document=document, bundle=self.bundle)
+
 
 class ReportBuilder:
     def __init__(self, root: Path | str) -> None:
@@ -57,8 +63,8 @@ class ReportBuilder:
         return BaseReport(document=document, bundle=self._write(document))
 
     def append_review(self, base: BaseReport, review: AgentReview) -> BaseReport:
-        document = base.document.model_copy(update={"agent_review": review})
-        return BaseReport(document=document, bundle=self._write(document))
+        reviewed = base.with_review(review)
+        return BaseReport(document=reviewed.document, bundle=self._write(reviewed.document))
 
     def _write(self, document: ReportDocument) -> ReportBundle:
         markdown_path = self.root / f"{document.report_id}.md"
