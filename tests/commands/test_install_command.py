@@ -23,7 +23,7 @@ def _pipeline(tmp_path: Path) -> InstallPipeline:
 
 def test_print_config_does_not_write_files(monkeypatch, tmp_path: Path) -> None:
     pipeline = _pipeline(tmp_path)
-    monkeypatch.setattr("skillcheck.commands.install.build_install_pipeline", lambda _: pipeline)
+    monkeypatch.setattr("skillcheck.commands.install.build_install_pipeline", lambda *_args, **_kwargs: pipeline)
 
     result = runner.invoke(app, ["install", "--print-config", "codex"])
 
@@ -33,9 +33,21 @@ def test_print_config_does_not_write_files(monkeypatch, tmp_path: Path) -> None:
     assert not (tmp_path / "AGENTS.md").exists()
 
 
+def test_print_config_with_missing_config_is_read_only(tmp_path: Path) -> None:
+    config = tmp_path / "missing.yaml"
+    runner_result = runner.invoke(
+        app,
+        ["install", "--print-config", "codex", "--config", str(config)],
+    )
+
+    assert runner_result.exit_code == 0
+    assert not config.exists()
+    assert not (tmp_path / ".skillcheck").exists()
+
+
 def test_install_accepts_multiple_agents_and_prints_exact_paths(monkeypatch, tmp_path: Path) -> None:
     pipeline = _pipeline(tmp_path)
-    monkeypatch.setattr("skillcheck.commands.install.build_install_pipeline", lambda _: pipeline)
+    monkeypatch.setattr("skillcheck.commands.install.build_install_pipeline", lambda *_args, **_kwargs: pipeline)
 
     result = runner.invoke(app, ["install", "--target", "codex", "--location", "global", "--yes"])
 

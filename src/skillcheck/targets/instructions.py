@@ -40,7 +40,7 @@ class InstructionManager:
     def preview(self, instructions: str) -> InstructionChange:
         text = self._read()
         span = self._marker_span(text)
-        block = self._block(instructions)
+        block = self._block(instructions, self._line_ending(text, span))
         if span is None:
             separator = "" if not text or text.endswith("\n") else "\n"
             after_text = f"{text}{separator}{block}"
@@ -81,12 +81,28 @@ class InstructionManager:
             return False
 
     def _read(self) -> str:
-        return self.path.read_text(encoding="utf-8") if self.path.exists() else ""
+        if not self.path.exists():
+            return ""
+        # ``Path.read_text`` uses universal-newline mode and silently changes
+        # CRLF user content to LF.  Keep the original separators for the
+        # compare-and-swap preview and for owned-block removal.
+        with self.path.open("r", encoding="utf-8", newline="") as handle:
+            return handle.read()
 
     @staticmethod
-    def _block(instructions: str) -> str:
-        body = instructions.strip("\n")
-        return f"{START}\n{body}\n{END}\n"
+    def _block(instructions: str, newline: str) -> str:
+        body = instructions.replace("\r\n", "\n").replace("\r", "\n").strip("\n")
+        body = body.replace("\n", newline)
+        return f"{START}{newline}{body}{newline}{END}{newline}"
+
+    @staticmethod
+    def _line_ending(text: str, span: tuple[int, int] | None) -> str:
+        sample = text if span is None else text[span[0] : span[1]]
+        if "\r\n" in sample:
+            return "\r\n"
+        if "\r" in sample:
+            return "\r"
+        return "\n"
 
     @staticmethod
     def _marker_span(text: str) -> tuple[int, int] | None:
@@ -99,6 +115,8 @@ class InstructionManager:
                 "Skillcheck instruction markers are incomplete or duplicated; manual repair is required"
             )
         end = ends[0] + len(END)
-        if text[end : end + 1] == "\n":
+        if text.startswith("\r\n", end):
+            end += 2
+        elif text[end : end + 1] in {"\r", "\n"}:
             end += 1
         return starts[0], end

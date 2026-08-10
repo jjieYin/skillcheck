@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 
 import typer
 
-from skillcheck.config import load_or_create_config
+from skillcheck.config import load_config, load_or_create_config
 from skillcheck.pipelines.install_pipeline import InstallPipeline
 from skillcheck.targets.base import AgentId, AgentTarget
 from skillcheck.targets.claude import ClaudeTarget
@@ -19,8 +19,7 @@ from skillcheck.targets.registry import TargetRegistry
 SUPPORTED_TARGETS = ("codex", "claude", "cursor")
 
 
-def build_install_pipeline(config_path: Path | None = None) -> InstallPipeline:
-    loaded = load_or_create_config(config_path)
+def _build_install_pipeline(loaded) -> InstallPipeline:
     home = Path.home()
     project = Path.cwd()
     skill_paths = loaded.scan_paths + loaded.extra_paths
@@ -42,6 +41,15 @@ def build_install_pipeline(config_path: Path | None = None) -> InstallPipeline:
         ),
     }
     return InstallPipeline(TargetRegistry(targets))
+
+
+def build_install_pipeline(config_path: Path | None = None, *, create: bool = True) -> InstallPipeline:
+    loaded = (
+        load_or_create_config(config_path)
+        if create
+        else load_config(config_path, create=False)
+    )
+    return _build_install_pipeline(loaded)
 
 
 def _selected_targets(pipeline: InstallPipeline, requested: str) -> list[str]:
@@ -77,7 +85,7 @@ def register(app: typer.Typer) -> None:
         config: Annotated[Path | None, typer.Option("--config")] = None,
     ) -> None:
         try:
-            pipeline = build_install_pipeline(config)
+            pipeline = build_install_pipeline(config, create=print_config is None)
             if print_config is not None:
                 selected = _selected_targets(pipeline, print_config)
                 if len(selected) != 1:
