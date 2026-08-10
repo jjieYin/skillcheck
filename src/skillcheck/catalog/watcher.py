@@ -79,7 +79,9 @@ class CatalogWatcher:
         try:
             options = {"debounce": self.debounce_ms, "stop_event": self._stop_event}
             if self.watch_factory is watch and WATCHFILES_AVAILABLE:
-                options.update({"yield_on_timeout": True, "step": 100})
+                # An idle native watcher otherwise waits its five-second Rust timeout before
+                # yielding, which would leave the MCP runtime falsely degraded at startup.
+                options.update({"yield_on_timeout": True, "step": 100, "rust_timeout": 500})
             iterator = iter(
                 self.watch_factory(
                     *(str(root) for root in self.roots),

@@ -53,3 +53,25 @@ def test_watcher_reports_startup_failure_before_start_returns(tmp_path: Path) ->
     watcher.start()
 
     assert watcher.startup_error == "watch unavailable"
+
+
+def test_default_watcher_handshake_completes_while_idle(tmp_path: Path, monkeypatch) -> None:
+    from skillcheck.catalog import watcher as watcher_module
+
+    received: dict[str, object] = {}
+
+    def idle_watch(*roots, **kwargs):
+        received.update(kwargs)
+        yield set()
+
+    monkeypatch.setattr(watcher_module, "watch", idle_watch)
+    monkeypatch.setattr(watcher_module, "WATCHFILES_AVAILABLE", True)
+    watcher = CatalogWatcher([tmp_path], lambda _: None, watch_factory=idle_watch)
+
+    watcher.start()
+    watcher.stop()
+
+    assert received["yield_on_timeout"] is True
+    assert received["step"] == 100
+    assert received["rust_timeout"] == 500
+    assert watcher.startup_pending is False
