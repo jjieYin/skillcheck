@@ -22,6 +22,10 @@ def register(app: typer.Typer) -> None:
         path: Annotated[Path | None, typer.Argument()] = None,
         review: Annotated[ReviewMode | None, typer.Option("--review")] = None,
         no_interactive: Annotated[bool, typer.Option("--no-interactive")] = False,
+        cwd: Annotated[
+            Path | None,
+            typer.Option("--cwd", hidden=True, help="旧版兼容：指定扫描目录"),
+        ] = None,
         config: Annotated[Path | None, typer.Option("--config")] = None,
         as_json: Annotated[bool, typer.Option("--json")] = False,
     ) -> None:
@@ -33,8 +37,9 @@ def register(app: typer.Typer) -> None:
             interactive=not no_interactive and sys.stdin.isatty(),
             cli_value=review.value if review else None,
         )
+        selected_path = path or cwd
         outcome = pipeline.run(
-            ScanScope(paths=[str(path)] if path else []),
+            ScanScope(paths=[str(selected_path)] if selected_path else []),
             ReviewMode(mode),
         )
         if as_json:

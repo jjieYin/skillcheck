@@ -88,6 +88,12 @@ class LegacyAuditor:
         self.service = service
 
     def audit(self, skills, findings):
+        if not skills:
+            return type(
+                "EmptyAudit",
+                (),
+                {"groups": [], "findings": [], "capabilities": ["builtin-validator"]},
+            )()
         return self.service.audit(use_llm=False).audit
 
 

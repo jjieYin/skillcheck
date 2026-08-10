@@ -7,6 +7,7 @@ Codex、Claude Code、Cursor、Agents 等常见目录，再用确定性规则和
 
 ## 安装
 
+当前 v0.2 仍提供 Python 开发安装方式；后续发行版会补充自包含安装包。
 开发环境（Windows PowerShell 和 POSIX shell 均适用）：
 
 ```powershell
@@ -25,19 +26,20 @@ skillcheck version
 python -m pip install -e '.[local-embedding]'
 ```
 
-## 基本流程
+## 基本流程（v0.2）
 
 ```powershell
-skillcheck init
+skillcheck
 skillcheck scan
-skillcheck audit --no-llm
-skillcheck check .\path\to\new-skill --no-llm
+skillcheck add .\path\to\new-skill --check-only
+skillcheck add .\path\to\new-skill --target codex
+skillcheck doctor
 skillcheck report latest
 ```
 
-`scan` 只盘点和更新索引；`audit` 不需要新的安装源，可以直接检查当前个人库；
-`check` 支持本地目录、ZIP 和 HTTPS GitHub URL；只有报告允许且用户明确确认时，
-`install` 才会重新获取并安装：
+直接运行 `skillcheck` 会进入交互式向导。`scan` 会自动发现本机常见 Skill 目录，
+更新索引并生成 Markdown/JSON 报告；`add` 支持本地目录、ZIP 和 HTTPS GitHub URL，
+先检查重复、边界重叠、质量与安全问题，再在用户确认后安装：
 
 ```powershell
 skillcheck install SC-20260806-120000-deadbeef --target codex
@@ -47,11 +49,16 @@ skillcheck install SC-20260806-120000-deadbeef --target codex
 
 ```text
 skillcheck scan --json
-skillcheck list --duplicates --provider codex
-skillcheck audit --path .\project\.agents\skills --refresh --no-llm
-skillcheck check https://github.com/example/skill --top-k 5 --strict
+skillcheck scan .\project\.agents\skills --no-interactive
+skillcheck add https://github.com/example/skill --check-only
 skillcheck report show REPORT_ID --json
 ```
+
+## 旧命令兼容
+
+`init`、`audit`、`check`、`list` 和 `install` 在 v0.2 中保留一个兼容周期，
+分别对应 `setup`、`scan`、`add --check-only`、索引查看和旧报告安装流程。运行时会
+提示新的推荐写法；脚本可逐步迁移，不需要一次性修改。
 
 ## 配置与隐私
 

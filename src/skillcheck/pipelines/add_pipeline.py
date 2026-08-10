@@ -16,6 +16,7 @@ class AddRequest(BaseModel):
     targets: list[str] = Field(default_factory=list)
     target_paths: list[Path] = Field(default_factory=list)
     review: str = "none"
+    top_k: int | None = None
     confirmed: bool = False
 
 
@@ -39,7 +40,10 @@ class AddPipeline:
         self.executor = executor
 
     def prepare(self, request: AddRequest) -> PreparedAdd:
-        result = self.checker.check(request.source, use_llm=request.review != "none")
+        check_kwargs = {"use_llm": request.review != "none"}
+        if request.top_k is not None:
+            check_kwargs["top_k"] = request.top_k
+        result = self.checker.check(request.source, **check_kwargs)
         plan = self.planner.create(
             result.report,
             targets=request.targets,
