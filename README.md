@@ -116,6 +116,8 @@ skillcheck add .\new-skill --review claude --check-only
 
 默认数据目录为 `~/.skillcheck/`：
 
+> 这里指的是运行 `skillcheck` 的用户电脑上的目录，不是 GitHub 仓库目录。首次运行后工具会自动创建它。
+
 ```text
 config.yaml   用户配置
 index.db      本地 Skill 索引
@@ -142,12 +144,14 @@ POSIX 系统可使用仓库中的 `install.sh`，自包含发行包也支持 Lin
 
 ## 文档
 
-- [快速开始](docs/getting-started.md)
-- [Agent 接入](docs/agent-setup.md)
-- [复核与隐私](docs/review-and-privacy.md)
-- [故障排查](docs/troubleshooting.md)
-- [v1 到 v2 迁移](docs/migration-v1-to-v2.md)
-- [Release 验收清单](docs/release-checklist.md)
+完整文档在 GitHub 仓库的 [`docs/`](https://github.com/jjieYin/skillcheck/tree/main/docs) 目录：
+
+- [快速开始](https://github.com/jjieYin/skillcheck/blob/main/docs/getting-started.md)
+- [Agent 接入](https://github.com/jjieYin/skillcheck/blob/main/docs/agent-setup.md)
+- [复核与隐私](https://github.com/jjieYin/skillcheck/blob/main/docs/review-and-privacy.md)
+- [故障排查](https://github.com/jjieYin/skillcheck/blob/main/docs/troubleshooting.md)
+- [v1 到 v2 迁移](https://github.com/jjieYin/skillcheck/blob/main/docs/migration-v1-to-v2.md)
+- [Release 验收清单](https://github.com/jjieYin/skillcheck/blob/main/docs/release-checklist.md)
 
 ## 兼容与边界
 
