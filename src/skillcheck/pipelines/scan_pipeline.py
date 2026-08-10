@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import StrEnum
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from skillcheck.governance.analyzer import GovernanceAnalyzer
 from skillcheck.governance.models import AnalyzeResult
@@ -37,15 +37,12 @@ class LocalScanResult(BaseModel):
     sync: dict[str, object]
     analysis: AnalyzeResult
     report: ReportPaths
-    agent_reviews: list[object] = Field(default_factory=list)
-
     def json_payload(self) -> dict[str, object]:
         return {
             "skill_count": self.skill_count,
             "sync": self.sync,
             "analysis": self.analysis.model_dump(mode="json"),
             "report": {"markdown": str(self.report.markdown), "json": str(self.report.json)},
-            "agent_reviews": self.agent_reviews,
         }
 
 

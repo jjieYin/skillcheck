@@ -30,4 +30,4 @@ def test_init_status_and_local_scan_form_the_cli_fallback_journey(monkeypatch, t
     assert json.loads(status.stdout)["initialized"] is True
     payload = json.loads(scan.stdout)
     assert payload["skill_count"] >= 1
-    assert payload["agent_reviews"] == []
+    assert "agent_reviews" not in payload

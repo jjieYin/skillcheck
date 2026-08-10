@@ -17,11 +17,9 @@ def test_scan_is_local_only(monkeypatch) -> None:
     result = SimpleNamespace(
         report=SimpleNamespace(markdown="report.md", json="report.json"),
         skill_count=2,
-        agent_reviews=[],
         json_payload=lambda: {
             "skill_count": 2,
             "report": {"markdown": "report.md", "json": "report.json"},
-            "agent_reviews": [],
         },
     )
     pipeline = SimpleNamespace(run=lambda paths: result)
@@ -31,7 +29,7 @@ def test_scan_is_local_only(monkeypatch) -> None:
     invocation = runner.invoke(app, ["scan", "--json"])
 
     assert invocation.exit_code == 0
-    assert '"agent_reviews": []' in invocation.stdout
+    assert '"agent_reviews"' not in invocation.stdout
     assert "report.json" in invocation.stdout
 
 

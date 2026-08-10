@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -47,6 +48,7 @@ def test_print_config_with_missing_config_is_read_only(tmp_path: Path) -> None:
 
 def test_install_accepts_multiple_agents_and_prints_exact_paths(monkeypatch, tmp_path: Path) -> None:
     pipeline = _pipeline(tmp_path)
+    monkeypatch.setenv("SKILLCHECK_HOME", str(tmp_path / "state"))
     monkeypatch.setattr("skillcheck.commands.install.build_install_pipeline", lambda *_args, **_kwargs: pipeline)
 
     result = runner.invoke(app, ["install", "--target", "codex", "--location", "global", "--yes"])
@@ -56,3 +58,30 @@ def test_install_accepts_multiple_agents_and_prints_exact_paths(monkeypatch, tmp
     assert str(tmp_path / "AGENTS.md") in result.stdout
     assert (tmp_path / "config.toml").exists()
     assert (tmp_path / "AGENTS.md").exists()
+
+
+def test_successful_install_persists_agents_for_status(monkeypatch, tmp_path: Path) -> None:
+    pipeline = _pipeline(tmp_path)
+    config = tmp_path / "state" / "config.yaml"
+    monkeypatch.setattr("skillcheck.commands.install.build_install_pipeline", lambda *_args, **_kwargs: pipeline)
+
+    installed = runner.invoke(
+        app,
+        ["install", "--target", "codex", "--location", "global", "--yes", "--config", str(config)],
+    )
+    status = runner.invoke(app, ["status", "--config", str(config), "--json"])
+
+    assert installed.exit_code == 0
+    assert json.loads(status.stdout)["configured_agents"] == ["codex"]
+    assert json.loads(status.stdout)["initialized"] is False
+
+
+def test_cancelled_install_does_not_create_configuration(monkeypatch, tmp_path: Path) -> None:
+    pipeline = _pipeline(tmp_path)
+    config = tmp_path / "state" / "config.yaml"
+    monkeypatch.setattr("skillcheck.commands.install.build_install_pipeline", lambda *_args, **_kwargs: pipeline)
+
+    result = runner.invoke(app, ["install", "--target", "codex", "--config", str(config)])
+
+    assert result.exit_code == 0
+    assert not config.exists()

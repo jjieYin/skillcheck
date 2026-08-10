@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 
 import typer
 
-from skillcheck.config import load_config, load_or_create_config
+from skillcheck.config import app_home, load_config, load_or_create_config, save_config
 from skillcheck.pipelines.install_pipeline import InstallPipeline
 from skillcheck.targets.base import AgentId, AgentTarget
 from skillcheck.targets.claude import ClaudeTarget
@@ -52,6 +52,23 @@ def build_install_pipeline(config_path: Path | None = None, *, create: bool = Tr
     return _build_install_pipeline(loaded)
 
 
+def _config_path(path: Path | None) -> Path:
+    return path.expanduser() if path is not None else app_home() / "config.yaml"
+
+
+def _persist_configured_targets(
+    config_path: Path | None, selected: list[str], location: Literal["global", "project"]
+) -> None:
+    """Record only an installation that has passed every integration validation."""
+
+    loaded = load_config(config_path, create=False)
+    configured = list(dict.fromkeys([*loaded.targets.configured, *selected]))
+    loaded.targets.configured = configured
+    loaded.targets.scope = location
+    loaded.targets.last_validated = True
+    save_config(_config_path(config_path), loaded)
+
+
 def _selected_targets(pipeline: InstallPipeline, requested: str) -> list[str]:
     normalized = requested.strip().casefold()
     if normalized == "all":
@@ -85,7 +102,7 @@ def register(app: typer.Typer) -> None:
         config: Annotated[Path | None, typer.Option("--config")] = None,
     ) -> None:
         try:
-            pipeline = build_install_pipeline(config, create=print_config is None)
+            pipeline = build_install_pipeline(config, create=False)
             if print_config is not None:
                 selected = _selected_targets(pipeline, print_config)
                 if len(selected) != 1:
@@ -113,7 +130,11 @@ def register(app: typer.Typer) -> None:
                 pipeline.apply(preview, confirmed=False)
                 typer.echo("Cancelled; no files were changed.")
                 return
-            result = pipeline.apply(preview, confirmed=True)
+            result = pipeline.apply(
+                preview,
+                confirmed=True,
+                on_success=lambda: _persist_configured_targets(config, selected, location),
+            )
             typer.echo(f"Configured {len(result.changed_files)} file(s).")
             for validation in result.validations:
                 typer.echo(f"- {validation}")

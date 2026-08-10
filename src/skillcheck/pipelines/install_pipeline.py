@@ -80,7 +80,13 @@ class InstallPipeline:
             )
         return InstallPreview(agents=normalized_agents, scope=scope, changes=changes)
 
-    def apply(self, preview: InstallPreview, *, confirmed: bool) -> InstallResult:
+    def apply(
+        self,
+        preview: InstallPreview,
+        *,
+        confirmed: bool,
+        on_success: Callable[[], None] | None = None,
+    ) -> InstallResult:
         if not confirmed:
             return InstallResult(changed_files=[], validations=[])
         applied: list[tuple[FileChangePreview, bool, str]] = []
@@ -103,6 +109,8 @@ class InstallPipeline:
                     raise RuntimeError(f"instruction marker validation failed for {agent}")
                 validations.append(f"{agent}: MCP entry and instruction markers validated")
             validations.append(self.smoke_check())
+            if on_success is not None:
+                on_success()
         except Exception:
             self._rollback(applied)
             raise

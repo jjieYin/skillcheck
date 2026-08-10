@@ -99,3 +99,19 @@ def test_smoke_failure_rolls_back_written_files(tmp_path: Path) -> None:
 
     assert not target.global_config.exists()
     assert not target.global_instructions.exists()
+
+
+def test_config_persistence_failure_rolls_back_written_files(tmp_path: Path) -> None:
+    target = _target(AgentId.CODEX, tmp_path)
+    pipeline = InstallPipeline(TargetRegistry([target]), smoke_check=lambda: "smoke passed")
+    preview = pipeline.preview(["codex"], scope="global")
+
+    with pytest.raises(OSError, match="config persistence failed"):
+        pipeline.apply(
+            preview,
+            confirmed=True,
+            on_success=lambda: (_ for _ in ()).throw(OSError("config persistence failed")),
+        )
+
+    assert not target.global_config.exists()
+    assert not target.global_instructions.exists()
