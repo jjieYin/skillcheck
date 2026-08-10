@@ -1,34 +1,89 @@
+"""Purely local command-line fallback for catalog governance checks."""
+
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
+from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+from skillcheck.governance.analyzer import GovernanceAnalyzer
+from skillcheck.governance.models import AnalyzeResult
+from skillcheck.models.audit import AuditGroup, LibraryAuditReport
+from skillcheck.reports import ReportWriter
+from skillcheck.reports.writer import ReportPaths, make_audit_report_id
+
+from .sync_pipeline import SyncPipeline
 
 
 class ReviewMode(StrEnum):
+    """Temporary compatibility import for the legacy add command.
+
+    The local scan pipeline never consumes this value.  Task 11 rewrites add
+    and Task 12 removes the compatibility type with the legacy review stack.
+    """
+
     NONE = "none"
     CODEX = "codex"
     CLAUDE = "claude"
 
 
-class ScanScope(BaseModel):
-    paths: list[str] = Field(default_factory=list)
+class LocalScanResult(BaseModel):
+    """Artifacts produced without starting or delegating to an Agent."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    skill_count: int
+    sync: dict[str, object]
+    analysis: AnalyzeResult
+    report: ReportPaths
+    agent_reviews: list[object] = Field(default_factory=list)
+
+    def json_payload(self) -> dict[str, object]:
+        return {
+            "skill_count": self.skill_count,
+            "sync": self.sync,
+            "analysis": self.analysis.model_dump(mode="json"),
+            "report": {"markdown": str(self.report.markdown), "json": str(self.report.json)},
+            "agent_reviews": self.agent_reviews,
+        }
 
 
 class ScanPipeline:
-    def __init__(self, context) -> None:
-        self.context = context
-        self.config: Any = None
+    def __init__(
+        self,
+        sync: SyncPipeline,
+        analyzer: GovernanceAnalyzer,
+        reports: ReportWriter,
+    ) -> None:
+        self.sync = sync
+        self.analyzer = analyzer
+        self.reports = reports
 
-    def run(self, scope: ScanScope, review: ReviewMode):
-        run = self.context.runs.start(scope)
-        inventory = self.context.discovery.discover(scope)
-        parsed = self.context.parser.parse_inventory(inventory)
-        self.context.skills.replace_inventory(parsed.skills, parsed.vectors)
-        analysis = self.context.auditor.audit(parsed.skills, parsed.findings)
-        base_report = self.context.reports.write_base(run, inventory, analysis)
-        agent_review = self.context.review_pipeline.review(run.run_id, analysis.groups, review.value)
-        final_report = self.context.reports.append_review(base_report, agent_review)
-        self.context.runs.complete(run.run_id, final_report.report_id)
-        return self.context.outcomes.scan(run, inventory, analysis, agent_review, final_report)
+    def run(self, paths: list[Path] | None = None) -> LocalScanResult:
+        summary = self.sync.run(paths=paths or None)
+        analysis = self.analyzer.analyze_library(limit=20)
+        report = LibraryAuditReport(
+            report_id=make_audit_report_id(analysis.run_id, [group.group_id for group in analysis.groups]),
+            scope="local catalog",
+            installation_count=analysis.summary.skills_considered,
+            unique_skill_count=analysis.summary.skills_considered,
+            groups=[
+                AuditGroup(
+                    group_id=group.group_id,
+                    relation=group.relation.value,
+                    member_skill_ids=group.member_skill_ids,
+                    confidence=(f"{group.similarity:.3f}" if group.similarity is not None else "local-rule"),
+                )
+                for group in analysis.groups
+            ],
+            findings=analysis.deterministic_findings,
+            capabilities=["local catalog sync", "deterministic governance analysis"],
+            llm_used=False,
+        )
+        return LocalScanResult(
+            skill_count=analysis.summary.skills_considered,
+            sync=summary.model_dump(mode="json"),
+            analysis=analysis,
+            report=self.reports.write(report),
+        )
