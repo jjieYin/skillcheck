@@ -53,3 +53,17 @@ def test_incompatible_existing_database_is_rejected_without_overwrite(tmp_path) 
         CatalogDatabase(path).initialize()
 
     assert path.read_bytes() == original
+
+
+def test_existing_v4_catalog_with_placeholder_tables_is_rejected(tmp_path) -> None:
+    path = tmp_path / "index.db"
+    with sqlite3.connect(path) as connection:
+        for table in EXPECTED_TABLES:
+            if table == "schema_meta":
+                connection.execute("CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+                connection.execute("INSERT INTO schema_meta(key, value) VALUES ('schema_version', '4')")
+            else:
+                connection.execute(f"CREATE TABLE {table} (placeholder TEXT)")
+
+    with pytest.raises(IncompatibleCatalogError, match="reinitialize"):
+        CatalogDatabase(path).initialize()

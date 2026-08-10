@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from importlib.resources import files
 from pathlib import Path
@@ -47,6 +48,10 @@ class CatalogDatabase:
                 if not self._expected_tables() <= self._table_names(connection):
                     raise IncompatibleCatalogError(
                         "Existing catalog is incomplete; reinitialize it for v0.4."
+                    )
+                if not self._has_expected_structure(connection):
+                    raise IncompatibleCatalogError(
+                        "Existing catalog has an incompatible schema; reinitialize it for v0.4."
                     )
         except IncompatibleCatalogError:
             raise
@@ -97,6 +102,40 @@ class CatalogDatabase:
         return {row["name"] for row in rows}
 
     @classmethod
+    def _has_expected_structure(cls, connection: sqlite3.Connection) -> bool:
+        objects = {
+            row["name"]: row
+            for row in connection.execute(
+                "SELECT name, type, sql FROM sqlite_master WHERE name IN "
+                f"({','.join('?' for _ in cls._expected_tables())})",
+                tuple(cls._expected_tables()),
+            ).fetchall()
+        }
+        for table, columns in cls._expected_columns().items():
+            schema_object = objects.get(table)
+            if schema_object is None or schema_object["type"] != "table":
+                return False
+            actual_columns = [
+                row["name"]
+                for row in connection.execute(f"PRAGMA table_info({table})").fetchall()
+            ]
+            if actual_columns != columns:
+                return False
+
+        skill_fts = objects.get("skill_fts")
+        if skill_fts is None or skill_fts["type"] != "table":
+            return False
+        definition = re.sub(r"\s+", "", skill_fts["sql"] or "").lower()
+        if not definition.startswith("createvirtualtableskill_ftsusingfts5("):
+            return False
+        if "snapshot_idunindexed,name,description,body" not in definition:
+            return False
+        fts_columns = [
+            row["name"] for row in connection.execute("PRAGMA table_info(skill_fts)").fetchall()
+        ]
+        return fts_columns == ["snapshot_id", "name", "description", "body"]
+
+    @classmethod
     def _expected_tables(cls) -> set[str]:
         return {
             "schema_meta",
@@ -114,4 +153,98 @@ class CatalogDatabase:
             "source_preflights",
             "install_plans",
             "skill_fts",
+        }
+
+    @staticmethod
+    def _expected_columns() -> dict[str, list[str]]:
+        return {
+            "schema_meta": ["key", "value"],
+            "library_roots": [
+                "root_id",
+                "path",
+                "provider",
+                "scope",
+                "project_path",
+                "enabled",
+                "created_at",
+                "updated_at",
+            ],
+            "skills": [
+                "skill_id",
+                "root_id",
+                "relative_path",
+                "status",
+                "current_snapshot_id",
+                "created_at",
+                "updated_at",
+            ],
+            "skill_snapshots": [
+                "snapshot_id",
+                "skill_id",
+                "root_id",
+                "relative_path",
+                "name",
+                "description",
+                "body",
+                "content_hash",
+                "status",
+                "tools_json",
+                "permissions_json",
+                "environments_json",
+                "inputs_json",
+                "outputs_json",
+                "indexed_at",
+                "parse_error",
+            ],
+            "sync_events": [
+                "event_id",
+                "revision",
+                "started_at",
+                "completed_at",
+                "added",
+                "updated",
+                "removed",
+                "invalid",
+                "warnings_json",
+            ],
+            "vectors": [
+                "snapshot_id",
+                "model",
+                "dimensions",
+                "content_hash",
+                "vector",
+                "created_at",
+            ],
+            "analysis_runs": [
+                "run_id",
+                "kind",
+                "revision",
+                "started_at",
+                "completed_at",
+                "status",
+                "parameters_json",
+                "warnings_json",
+            ],
+            "candidate_groups": ["group_id", "run_id", "kind", "score", "status", "created_at"],
+            "group_members": ["group_id", "snapshot_id", "role"],
+            "evidence": ["evidence_id", "group_id", "kind", "content_json", "created_at"],
+            "agent_reviews": [
+                "review_id",
+                "group_id",
+                "agent",
+                "decision",
+                "rationale",
+                "payload_json",
+                "created_at",
+            ],
+            "reports": ["report_id", "run_id", "format", "path", "content_hash", "created_at"],
+            "source_preflights": ["preflight_id", "source", "status", "result_json", "created_at"],
+            "install_plans": [
+                "plan_id",
+                "source_preflight_id",
+                "status",
+                "plan_json",
+                "created_at",
+                "updated_at",
+            ],
         }
