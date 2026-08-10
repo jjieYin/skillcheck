@@ -27,6 +27,39 @@ irm https://raw.githubusercontent.com/jjieYin/skillcheck/main/install.ps1 | iex
 skillcheck version
 ```
 
+### macOS / Linux
+
+如果 Release 已提供对应平台的自包含包，macOS 和 Linux 用户可以使用同一个安装入口：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/jjieYin/skillcheck/main/install.sh | sh
+```
+
+安装程序会根据系统和 CPU 架构自动选择资产：
+
+- Linux x64：`skillcheck-<版本>-linux-x64.tar.gz`；
+- macOS Intel：`skillcheck-<版本>-macos-x64.tar.gz`；
+- macOS Apple Silicon：`skillcheck-<版本>-macos-arm64.tar.gz`。
+
+命令入口默认放在 `~/.local/bin/skillcheck`。如果终端提示该目录不在 `PATH`，按当前 Shell 添加一次：
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+想永久生效，可以将这行加入 `~/.zshrc`（macOS 默认 Shell）或 `~/.bashrc`（Linux 常用 Shell），然后重新打开终端。
+
+当前 `v0.3.0-beta` Release 先提供 Windows x64 包；如果对应的 macOS/Linux 资产尚未发布，可使用源码安装：
+
+```sh
+git clone https://github.com/jjieYin/skillcheck.git
+cd skillcheck
+python3 -m venv .venv
+. .venv/bin/activate
+python3 -m pip install .
+skillcheck version
+```
+
 ### 2. 扫描已有 Skills
 
 扫描工具自动发现常见目录，更新本地索引，并生成 Markdown/JSON 报告：
@@ -140,7 +173,7 @@ python -m pip install -e ".[dev]"
 skillcheck version
 ```
 
-POSIX 系统可使用仓库中的 `install.sh`，自包含发行包也支持 Linux 和 macOS。普通用户不需要 Python。
+POSIX 系统的自包含安装入口是 `install.sh`；开发者也可以使用上面的源码安装方式。普通用户使用已发布的自包含包时不需要 Python。
 
 ## 文档
 

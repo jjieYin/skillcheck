@@ -20,8 +20,9 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 ASSET="skillcheck-${VERSION}-${PLATFORM}-${ARCH}.${EXT}"
 BASE="https://github.com/${REPOSITORY}/releases/download/v${VERSION}"
-curl -fsSL "${BASE}/${ASSET}" -o "${TMP}/${ASSET}"
-curl -fsSL "${BASE}/manifest.json" -o "${TMP}/manifest.json"
+DOWNLOAD_QUERY="?skillcheck_version=${VERSION}"
+curl -fsSL "${BASE}/${ASSET}${DOWNLOAD_QUERY}" -o "${TMP}/${ASSET}"
+curl -fsSL "${BASE}/manifest.json${DOWNLOAD_QUERY}" -o "${TMP}/manifest.json"
 
 EXPECTED="$(sed -n 's/.*"sha256": "\([a-fA-F0-9]*\)".*/\1/p' "${TMP}/manifest.json")"
 ACTUAL="$(sha256sum "${TMP}/${ASSET}" 2>/dev/null | awk '{print $1}' || shasum -a 256 "${TMP}/${ASSET}" | awk '{print $1}')"
@@ -41,4 +42,3 @@ EOF
 chmod +x "${BIN}/skillcheck"
 case ":${PATH:-}:" in *":${BIN}:"*) ;; *) echo "请将 ${BIN} 加入 PATH" ;; esac
 "${BIN}/skillcheck" version
-
