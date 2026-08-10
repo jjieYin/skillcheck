@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 
 from skillcheck.models import Provider, Scope, SkillRecord
+from skillcheck.storage.database import Database
 
 
 @dataclass(frozen=True)
@@ -75,8 +76,9 @@ class SkillStore:
                 """
             )
             connection.execute(
-                "INSERT OR REPLACE INTO schema_meta(key, value) VALUES ('schema_version', '1')"
+                "INSERT OR IGNORE INTO schema_meta(key, value) VALUES ('schema_version', '1')"
             )
+        Database(self.path).migrate()
 
     def upsert(
         self,

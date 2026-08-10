@@ -1,107 +1,160 @@
 # skillcheck
 
-`skillcheck` 是一个个人本地 Skill 盘点、重复审计和安装前检查工具。它先扫描
-Codex、Claude Code、Cursor、Agents 等常见目录，再用确定性规则和本地向量检索
-发现重复、边界重叠、环境变体、权限冲突和安全问题。审计只生成建议，不会自动
-删除或改写现有 Skill。
+`skillcheck` 是一个面向个人的本地 Skills 管理与检查工具：在安装新 Skill 前，或定期整理已有 Skill 时，自动发现重复、边界重叠、环境变体、权限冲突和安全问题，并给出“保留、合并、改名、重写边界或人工复核”的建议。
 
-## 安装
+它只生成报告和建议，不会自动删除、合并或改写你的 Skill。
 
-开发环境（Windows PowerShell 和 POSIX shell 均适用）：
+## 你可以用它做什么
+
+- 扫描本机已有的 Codex、Claude Code、Cursor、Agents 等 Skill 目录；
+- 检查一个待安装的目录、ZIP 或 GitHub Skill 是否与现有库重复；
+- 输出 Markdown 和 JSON 报告，便于阅读、归档或二次处理；
+- 在需要时调用 Codex/Claude 做语义复核；默认不调用 Agent，也不联网。
+
+## 5 分钟上手
+
+### 1. 安装
+
+Windows x64 普通用户无需 Python：
+
+```powershell
+irm https://raw.githubusercontent.com/jjieYin/skillcheck/main/install.ps1 | iex
+```
+
+安装后重新打开终端，确认命令可用：
+
+```powershell
+skillcheck version
+```
+
+### 2. 扫描已有 Skills
+
+扫描工具自动发现常见目录，更新本地索引，并生成 Markdown/JSON 报告：
+
+```powershell
+skillcheck scan
+```
+
+只扫描指定目录时：
+
+```powershell
+skillcheck scan "D:\my-skills"
+```
+
+### 3. 安装前检查新 Skill
+
+先检查，不安装：
+
+```powershell
+skillcheck add "D:\downloads\new-skill" --check-only
+```
+
+检查通过后，确认并安装到目标 Agent：
+
+```powershell
+skillcheck add "D:\downloads\new-skill" --target codex
+```
+
+命令会先显示检查结论和报告路径，只有你确认后才会写入目标目录。
+
+## 常用命令
+
+| 命令 | 用途 |
+| --- | --- |
+| `skillcheck` | 打开交互式向导 |
+| `skillcheck scan [目录]` | 扫描已有 Skills，更新索引并生成报告 |
+| `skillcheck add SOURCE --check-only` | 检查新 Skill，不安装 |
+| `skillcheck add SOURCE --target codex` | 检查并在确认后安装 |
+| `skillcheck setup` | 检测并配置 Codex、Claude、Cursor 的 SkillCheck MCP 接入 |
+| `skillcheck report latest` | 查看最近一次报告 |
+| `skillcheck doctor` | 检查运行环境、索引、报告目录和 Agent 配置 |
+| `skillcheck upgrade` | 更新自包含版本 |
+| `skillcheck uninstall` | 卸载程序；默认保留 Skills、索引、报告和用户配置 |
+
+`SOURCE` 支持三种形式：
+
+- 本地目录：`D:\downloads\new-skill`；
+- ZIP 文件：`D:\downloads\new-skill.zip`；
+- HTTPS GitHub URL：`https://github.com/example/skill`。
+
+## 一次扫描会做什么
+
+```text
+发现目录 → 解析 SKILL.md → 更新索引 → 本地规则检查
+                                  ↓
+                         哈希/离线向量相似度分析
+                                  ↓
+                           生成 MD/JSON 报告
+                                  ↓
+                   （可选）Codex/Claude 语义复核
+```
+
+本地分析会优先给出确定性结果；相似 Skill 可能被归为：
+
+| 类型 | 典型建议 |
+| --- | --- |
+| `EXACT_DUPLICATE` | 保留一个权威副本，其他副本删除或停用前人工确认 |
+| `HIGH_OVERLAP` | 合并能力，或重写两者的边界和触发条件 |
+| `VARIANT_GROUP` | 保留变体，但改名并写清技术栈、环境或权限差异 |
+| `CONFLICT_GROUP` | 检查读写权限和执行边界，必须人工复核 |
+| `QUALITY_ISSUE` | 修复格式、质量或安全问题 |
+
+## Agent 语义复核与隐私
+
+默认扫描不启动 Codex/Claude，不发送 Skill 正文，也不需要配置模型。需要更细的边界判断时，显式指定：
+
+```powershell
+skillcheck scan --review codex
+skillcheck add .\new-skill --review claude --check-only
+```
+
+复核只输出治理建议，不能授权安装、删除或修改文件。凭据、Token 和敏感正文会脱敏；复核失败时，基础本地报告仍然保留。
+
+如果使用 OpenAI、千问等兼容模型，API key 只从环境变量读取，不写入 YAML。完整说明见 [`docs/review-and-privacy.md`](docs/review-and-privacy.md)。
+
+## 报告和本地数据
+
+默认数据目录为 `~/.skillcheck/`：
+
+> 这里指的是运行 `skillcheck` 的用户电脑上的目录，不是 GitHub 仓库目录。首次运行后工具会自动创建它。
+
+```text
+config.yaml   用户配置
+index.db      本地 Skill 索引
+reports/      Markdown/JSON 报告
+staging/      ZIP/GitHub 临时内容
+```
+
+临时测试或多套环境可以设置：
+
+```powershell
+$env:SKILLCHECK_HOME = "D:\skillcheck-test"
+```
+
+## 其他安装方式
+
+开发者可以在仓库根目录安装：
 
 ```powershell
 python -m pip install -e ".[dev]"
 skillcheck version
 ```
 
-```bash
-python -m pip install -e '.[dev]'
-skillcheck version
-```
+POSIX 系统可使用仓库中的 `install.sh`，自包含发行包也支持 Linux 和 macOS。普通用户不需要 Python。
 
-默认使用离线 hash embedding，不需要下载模型。需要本地语义模型时再安装：
+## 文档
 
-```bash
-python -m pip install -e '.[local-embedding]'
-```
+完整文档在 GitHub 仓库的 [`docs/`](https://github.com/jjieYin/skillcheck/tree/main/docs) 目录：
 
-## 基本流程
+- [快速开始](https://github.com/jjieYin/skillcheck/blob/main/docs/getting-started.md)
+- [Agent 接入](https://github.com/jjieYin/skillcheck/blob/main/docs/agent-setup.md)
+- [复核与隐私](https://github.com/jjieYin/skillcheck/blob/main/docs/review-and-privacy.md)
+- [故障排查](https://github.com/jjieYin/skillcheck/blob/main/docs/troubleshooting.md)
+- [v1 到 v2 迁移](https://github.com/jjieYin/skillcheck/blob/main/docs/migration-v1-to-v2.md)
+- [Release 验收清单](https://github.com/jjieYin/skillcheck/blob/main/docs/release-checklist.md)
 
-```powershell
-skillcheck init
-skillcheck scan
-skillcheck audit --no-llm
-skillcheck check .\path\to\new-skill --no-llm
-skillcheck report latest
-```
+## 兼容与边界
 
-`scan` 只盘点和更新索引；`audit` 不需要新的安装源，可以直接检查当前个人库；
-`check` 支持本地目录、ZIP 和 HTTPS GitHub URL；只有报告允许且用户明确确认时，
-`install` 才会重新获取并安装：
+旧的 `init`、`audit`、`check`、`list`、`install` 命令仍保留一个兼容周期，但新项目建议统一使用 `setup`、`scan` 和 `add`。
 
-```powershell
-skillcheck install SC-20260806-120000-deadbeef --target codex
-```
-
-常见选项：
-
-```text
-skillcheck scan --json
-skillcheck list --duplicates --provider codex
-skillcheck audit --path .\project\.agents\skills --refresh --no-llm
-skillcheck check https://github.com/example/skill --top-k 5 --strict
-skillcheck report show REPORT_ID --json
-```
-
-## 配置与隐私
-
-配置默认写入 `~/.skillcheck/config.yaml`，索引写入 `index.db`，报告写入
-`reports/`。可通过 `SKILLCHECK_HOME` 将全部状态放到临时目录，或通过
-`--config` 指定配置文件。API key 只从环境变量读取，不会写入 YAML：
-
-```yaml
-llm:
-  enabled: true
-  provider: qwen
-  model: qwen-plus
-  base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
-  api_key_env: DASHSCOPE_API_KEY
-  allow_full_text: false
-```
-
-OpenAI 兼容服务只在 `enabled: true` 且对应环境变量存在时调用。默认不把完整
-正文发送到远程模型；`allow_full_text: true` 才允许发送正文。检测到凭据或隐藏
-Unicode 时，正文会被省略或脱敏。没有 LLM、网络或 SkillSpector 时，基础解析、
-哈希重复、离线向量检索和内置安全规则仍可运行。
-
-## 可选 SkillSpector
-
-安装并把 `skillspector` 放入 PATH 后，可在配置中指定命令：
-
-```yaml
-security:
-  enabled: true
-  skill_spector_command: skillspector
-  timeout_seconds: 30
-```
-
-工具不可用时报告会明确标记能力降级，不会把“未扫描”误报为“安全”。
-
-## 如何阅读审计建议
-
-审计组可能包含：
-
-- `EXACT_DUPLICATE`：内容哈希一致，通常保留一个权威副本；
-- `HIGH_OVERLAP`：任务与正文高度重叠，建议合并能力或补充边界；
-- `VARIANT_GROUP`：环境、技术栈或权限不同，建议改名并写清触发条件；
-- `CONFLICT_GROUP`：读写权限或执行边界相冲突，必须人工复核；
-- `QUALITY_ISSUE`：格式、质量或安全检查发现问题。
-
-Markdown 和 JSON 报告具有相同的报告 ID、决策、候选、证据和建议。安装会重新
-获取原始源并校验报告中的内容哈希；源被修改、目标已存在或决策为合并/拒绝/不
-安全时，安装会被阻断。
-
-## 非目标
-
-当前版本不提供自动删除、自动合并、自动修改 Skill，也不替代企业级 Registry、
-RBAC 或远程团队协作平台。Agent Skill 包装和 MCP 服务应在 CLI 稳定后单独设计。
+当前版本是个人本地工具，不替代企业级 Registry、RBAC 或团队协作平台，也不提供自动删除、自动合并和自动修改 Skill。

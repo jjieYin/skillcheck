@@ -29,6 +29,7 @@ class Installer:
     ) -> Path:
         self._check_decision(report, confirmed=confirmed, name=name)
         target_root = Path(target_root).expanduser().resolve()
+        _validate_target_root(target_root)
         target_root.mkdir(parents=True, exist_ok=True)
         staged = stage_source(report.source, limits=self.limits, staging_parent=target_root.parent)
         try:
@@ -77,3 +78,8 @@ def _skill_name(root: Path) -> str:
 def _validate_name(name: str) -> None:
     if not name or name in {".", ".."} or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", name):
         raise InstallBlocked("target Skill name contains unsupported path characters")
+
+
+def _validate_target_root(path: Path) -> None:
+    if path == Path(path.anchor) or path == Path.home().resolve() or path == Path.cwd().resolve():
+        raise InstallBlocked(f"安装目标过宽，拒绝写入：{path}")
