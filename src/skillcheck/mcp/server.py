@@ -1,4 +1,4 @@
-"""MCP stdio server exposing exactly three read-only tools."""
+"""MCP stdio server exposing the CodeGraph-mode governance contract."""
 
 from __future__ import annotations
 
@@ -9,54 +9,53 @@ from mcp.server.fastmcp import FastMCP
 
 from skillcheck.config import load_or_create_config
 from skillcheck.mcp.instructions import MCP_INSTRUCTIONS
-from skillcheck.mcp.repositories import FileRepositories
 from skillcheck.mcp.runtime import McpRuntime
-from skillcheck.mcp.tools import SkillcheckQueries
+from skillcheck.mcp.tools import SkillcheckMcpTools
 
-TOOL_NAMES = {"skillcheck_summary", "skillcheck_groups", "skillcheck_report"}
+TOOL_NAMES = {
+    "skillcheck_analyze",
+    "skillcheck_evidence",
+    "skillcheck_save_review",
+}
 
 
-def create_server(
-    queries: SkillcheckQueries | None = None, runtime: McpRuntime | None = None
-) -> FastMCP:
-    if queries is None:
-        config = load_or_create_config()
-        queries = SkillcheckQueries(FileRepositories(config.reports_path))
+def create_server(tools: SkillcheckMcpTools) -> FastMCP:
+    """Create a server with no compatibility or direct-agent tools."""
     server = FastMCP("skillcheck", instructions=MCP_INSTRUCTIONS, log_level="ERROR")
 
-    @server.tool(name="skillcheck_summary", description="读取最近一次 Skill 治理摘要")
-    def skillcheck_summary() -> dict[str, object]:
-        if runtime is not None:
-            status = runtime.before_query()
-            if getattr(status, "state", None) == "not_initialized":
-                return status.model_dump(mode="json")
-        return queries.summary()
+    @server.tool(name="skillcheck_analyze", description="Analyze a local Skill library or incoming source.")
+    def skillcheck_analyze(
+        mode: str,
+        source: str | None = None,
+        scope: str = "all",
+        limit: int = 20,
+    ) -> dict[str, object]:
+        return tools.analyze(mode, source, scope, limit)
 
-    @server.tool(name="skillcheck_groups", description="读取重复、重叠和冲突分组的脱敏证据")
-    def skillcheck_groups(relation: str | None = None, limit: int = 20) -> Any:
-        if runtime is not None:
-            status = runtime.before_query()
-            if getattr(status, "state", None) == "not_initialized":
-                return status.model_dump(mode="json")
-        return queries.groups(relation=relation, limit=limit)
+    @server.tool(name="skillcheck_evidence", description="Read bounded, redacted evidence for one candidate group.")
+    def skillcheck_evidence(
+        run_id: str,
+        group_id: str,
+        page: int = 0,
+        include_body: bool = False,
+    ) -> dict[str, object]:
+        return tools.evidence(run_id, group_id, page, include_body)
 
-    @server.tool(name="skillcheck_report", description="读取指定报告的脱敏结果")
-    def skillcheck_report(report_id: str) -> dict[str, object]:
-        if runtime is not None:
-            status = runtime.before_query()
-            if getattr(status, "state", None) == "not_initialized":
-                return status.model_dump(mode="json")
-        return queries.report(report_id)
+    @server.tool(name="skillcheck_save_review", description="Save the Agent's explicit governance decisions as a report.")
+    def skillcheck_save_review(run_id: str, decisions: list[dict[str, Any]]) -> dict[str, object]:
+        return tools.save_review(run_id, decisions)
 
     return server
 
 
+def build_runtime(config_path: Path | str | None = None) -> McpRuntime:
+    return McpRuntime(load_or_create_config(config_path))
+
+
 def run_stdio(config_path: Path | str | None = None) -> None:
-    config = load_or_create_config(config_path)
-    queries = SkillcheckQueries(FileRepositories(config.reports_path))
-    runtime = McpRuntime(config)
+    runtime = build_runtime(config_path)
     runtime.start()
     try:
-        create_server(queries, runtime=runtime).run("stdio")
+        create_server(SkillcheckMcpTools(runtime)).run("stdio")
     finally:
         runtime.stop()

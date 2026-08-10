@@ -1,4 +1,4 @@
-"""Start the read-only MCP stdio service."""
+"""Start the Agent-native Skillcheck MCP stdio service."""
 
 from __future__ import annotations
 
@@ -19,4 +19,3 @@ def register(app: typer.Typer) -> None:
         from skillcheck.mcp.server import run_stdio
 
         run_stdio(config)
-
