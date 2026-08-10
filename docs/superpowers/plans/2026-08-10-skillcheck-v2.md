@@ -922,7 +922,7 @@ def test_add_checks_supported_source_before_install(add_pipeline, source_factory
 def test_changed_source_invalidates_approved_plan(add_pipeline, local_source) -> None:
     plan = add_pipeline.prepare(AddRequest(source=str(local_source), targets=["codex"], confirmed=False)).plan
     (local_source / "SKILL.md").write_text("changed", encoding="utf-8")
-    with pytest.raisesRegex(ValueError, "来源已变化"):
+    with pytest.raises(ValueError, match="来源已变化"):
         add_pipeline.execute(plan, approval_token=plan.approval_token)
 ```
 
