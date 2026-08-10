@@ -34,4 +34,7 @@ def run_menu() -> None:
         if action in {"0", "q", "quit", "exit"}:
             typer.echo("已退出。")
             return
+        if action == "4":
+            typer.echo("请运行 skillcheck setup，进入 Agent 自动检测和配置向导。")
+            continue
         typer.echo(f"功能“{MENU_ITEMS.get(action, action)}”将在对应命令中执行。")

@@ -78,19 +78,6 @@ def _run_scan(
 
 
 def register(app: typer.Typer) -> None:
-    @app.command("setup")
-    def setup(
-        config: Path | None = typer.Option(None, "--config", help="配置文件路径"),
-        home: Path | None = typer.Option(None, "--home", help="用于生成默认扫描目录的用户目录"),
-    ) -> None:
-        """Create the local configuration and state directories."""
-        try:
-            target = _initialise(config, home)
-            typer.echo(f"已初始化 skillcheck 配置：{target}")
-        except Exception as exc:
-            typer.echo(f"初始化失败：{exc}", err=True)
-            raise typer.Exit(code=3) from exc
-
     @app.command("init", hidden=True)
     def init_compat(
         config: Path | None = typer.Option(None, "--config", help="配置文件路径"),

@@ -12,6 +12,8 @@ from typing import Any, Literal
 
 from tomlkit import TOMLDocument, dumps, parse, table
 
+from skillcheck.targets.base import AgentId
+
 
 class ConfigFormatError(RuntimeError):
     """Raised when an Agent configuration cannot be parsed safely."""
@@ -22,6 +24,7 @@ class ConfigWriteResult:
     path: Path
     changed: bool
     summary: tuple[str, ...] = ()
+    agent: AgentId | None = None
 
 
 def content_hash(path: Path) -> str | None:

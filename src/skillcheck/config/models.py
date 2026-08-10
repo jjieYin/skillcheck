@@ -81,6 +81,8 @@ class ThresholdConfig(BaseModel):
 
 class TargetConfig(BaseModel):
     configured: list[str] = Field(default_factory=list)
+    scope: Literal["global", "project"] = "global"
+    last_validated: bool = False
 
 
 class ReportsConfig(BaseModel):

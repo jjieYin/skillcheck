@@ -118,15 +118,26 @@ class McpTarget:
             path=change.path,
             changed=change.changed,
             summary=tuple(change.summary),
+            agent=self.agent,
         )
 
     def uninstall(self, scope: str) -> ConfigWriteResult:
         path = self._path_for(scope)
         if not path.exists():
-            return ConfigWriteResult(path=path, changed=False, summary=("配置不存在，无需卸载",))
+            return ConfigWriteResult(
+                path=path,
+                changed=False,
+                summary=("配置不存在，无需卸载",),
+                agent=self.agent,
+            )
         document, text, before_hash = load_document(path, self.format)
         if read_mcp_entry(document, self.format, "skillcheck") is None:
-            return ConfigWriteResult(path=path, changed=False, summary=("skillcheck MCP 配置不存在",))
+            return ConfigWriteResult(
+                path=path,
+                changed=False,
+                summary=("skillcheck MCP 配置不存在",),
+                agent=self.agent,
+            )
         write_mcp_entry(document, self.format, "skillcheck", None)
         after_text = render_document(document, self.format)
         atomic_replace(path, after_text, expected_hash=before_hash)
@@ -134,6 +145,7 @@ class McpTarget:
             path=path,
             changed=True,
             summary=(f"移除 {self.agent.value} 的 skillcheck MCP 配置",),
+            agent=self.agent,
         )
 
     def validate(self, scope: str) -> bool:

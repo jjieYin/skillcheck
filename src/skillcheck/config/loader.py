@@ -39,6 +39,17 @@ def _atomic_write(path: Path, content: str) -> None:
     temporary.replace(path)
 
 
+def save_config(path: Path | str, config: AppConfig) -> None:
+    """Persist the user configuration through a same-directory atomic swap."""
+
+    config_path = Path(path).expanduser()
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    _atomic_write(
+        config_path,
+        yaml.safe_dump(yaml_payload(config), sort_keys=False, allow_unicode=True),
+    )
+
+
 def load_or_create_config(
     path: Path | str | None = None,
     *,
