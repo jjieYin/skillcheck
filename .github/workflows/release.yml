@@ -55,7 +55,12 @@ jobs:
             executable="dist/skillcheck-${version}-${TARGET_PLATFORM}-${TARGET_ARCH}/skillcheck"
           fi
 
-          "$executable" version
+          version_output="$($executable version)"
+          printf '%s\n' "$version_output"
+          if ! printf '%s\n' "$version_output" | grep -F "skillcheck ${version}" >/dev/null; then
+            echo "release version mismatch: expected ${version}, got ${version_output}" >&2
+            exit 1
+          fi
           set +e
           "$executable" doctor --json
           doctor_code=$?

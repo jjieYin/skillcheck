@@ -49,7 +49,7 @@ export PATH="$HOME/.local/bin:$PATH"
 
 想永久生效，可以将这行加入 `~/.zshrc`（macOS 默认 Shell）或 `~/.bashrc`（Linux 常用 Shell），然后重新打开终端。
 
-当前 `v0.3.0-beta` Release 先提供 Windows x64 包；如果对应的 macOS/Linux 资产尚未发布，可使用源码安装：
+`v0.3.1` Release 提供 Windows x64、Linux x64、macOS Intel 和 macOS Apple Silicon 自包含包。旧的 `v0.3.0-beta` 仅提供 Windows x64；如果某个版本尚未发布对应资产，可使用源码安装：
 
 ```sh
 git clone https://github.com/jjieYin/skillcheck.git

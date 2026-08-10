@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "skillcheck"
-version = "0.2.0a0"
+version = "0.3.1"
 description = "Local-first Skill inventory, audit, and preflight checker"
 readme = "README.md"
 requires-python = ">=3.11"

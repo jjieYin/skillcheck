@@ -11,7 +11,7 @@ def test_release_asset_hash_must_match(tmp_path: Path) -> None:
     asset = tmp_path / "skillcheck.zip"
     asset.write_bytes(b"release")
     manifest = ReleaseManifest(
-        version="0.3.0-beta",
+        version="0.3.1",
         platform="windows",
         architecture="x64",
         asset_name=asset.name,
@@ -23,4 +23,3 @@ def test_release_asset_hash_must_match(tmp_path: Path) -> None:
     asset.write_bytes(b"tampered")
     with pytest.raises(ValueError, match="SHA-256"):
         verify_asset(asset, manifest)
-
