@@ -112,6 +112,8 @@ def test_save_review_redacts_agent_reason_and_recommendations(prepared) -> None:
         recommendations=[
             'Remove password: "recommendation-secret" before sharing.',
             'Do not persist password: "my super secret".',
+            'Reject password: "line one\nline two".',
+            'Reject password: "unterminated\nnext: token: "other secret"',
         ],
     )
 
@@ -122,6 +124,10 @@ def test_save_review_redacts_agent_reason_and_recommendations(prepared) -> None:
     assert "rec-secret" not in report_text
     assert "recommendation-secret" not in report_text
     assert "super secret" not in report_text
+    assert "line one" not in report_text
+    assert "line two" not in report_text
+    assert "unterminated" not in report_text
+    assert "other secret" not in report_text
     with catalog.database.connect() as connection:
         stored = connection.execute("SELECT rationale, payload_json FROM agent_reviews").fetchone()
     assert "reason-secret" not in stored[0]
