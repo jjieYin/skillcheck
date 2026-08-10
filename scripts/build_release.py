@@ -6,9 +6,36 @@ import argparse
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
-from render_manifest import render
+try:
+    from scripts.render_manifest import render
+except ImportError:  # direct ``python scripts/build_release.py`` execution
+    from render_manifest import render
+
+
+@dataclass(frozen=True)
+class ReleaseTarget:
+    platform: str
+    arch: str
+
+    @property
+    def suffix(self) -> str:
+        return ".zip" if self.platform == "windows" else ".tar.gz"
+
+    def asset_name(self, version: str) -> str:
+        return f"skillcheck-{version}-{self.platform}-{self.arch}{self.suffix}"
+
+
+def release_matrix() -> list[ReleaseTarget]:
+    return [
+        ReleaseTarget("windows", "x64"),
+        ReleaseTarget("windows", "arm64"),
+        ReleaseTarget("linux", "x64"),
+        ReleaseTarget("macos", "x64"),
+        ReleaseTarget("macos", "arm64"),
+    ]
 
 
 def build(version: str, platform: str, arch: str) -> Path:
@@ -36,8 +63,12 @@ def build(version: str, platform: str, arch: str) -> Path:
         if dist.exists():
             shutil.rmtree(dist)
         generated.rename(dist)
-    asset = root / "dist" / f"skillcheck-{version}-{platform}-{arch}.zip"
-    shutil.make_archive(str(asset.with_suffix("")), "zip", root_dir=dist)
+    target = ReleaseTarget(platform, arch)
+    asset = root / "dist" / target.asset_name(version)
+    if target.suffix == ".zip":
+        shutil.make_archive(str(asset.with_suffix("")), "zip", root_dir=dist)
+    else:
+        shutil.make_archive(str(asset.with_suffix("").with_suffix("")), "gztar", root_dir=dist)
     render(
         asset,
         version=version,

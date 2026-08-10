@@ -1,0 +1,15 @@
+{
+  "version": "0.3.0-beta",
+  "description": "Local-first Skill inventory, audit and preflight checker",
+  "homepage": "https://github.com/jjieYin/skillcheck",
+  "license": "MIT",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/jjieYin/skillcheck/releases/download/v0.3.0-beta/skillcheck-0.3.0-beta-windows-x64.zip",
+      "hash": "REPLACE_WITH_RELEASE_SHA256"
+    }
+  },
+  "bin": "skillcheck.exe",
+  "checkver": "github"
+}
+
