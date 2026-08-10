@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
@@ -30,7 +31,7 @@ class CatalogReconciler:
     def __init__(self, repository: CatalogRepository, *, embedding=None) -> None:
         self.repository = repository
         self.embedding = embedding
-        self._fingerprints: dict[Path, tuple[int, int]] = {}
+        self._fingerprints: dict[Path, tuple[int, int, str]] = {}
 
     def reconcile(
         self, roots: list[LibraryRoot], changed_paths: list[Path] | None = None
@@ -41,10 +42,15 @@ class CatalogReconciler:
         warnings: list[str] = []
         invalid = 0
         for root in enabled_roots:
-            root_observations, root_warnings = self._observe(root, changed_paths)
+            root_observations, root_warnings = self._observe(
+                root, changed_paths, self._current_state(root)
+            )
             observations[root.root_id] = root_observations
             warnings.extend(root_warnings)
-            invalid += sum(item.status is SkillStatus.INVALID for item in root_observations.values())
+            invalid += sum(
+                item is not None and item.status is SkillStatus.INVALID
+                for item in root_observations.values()
+            )
 
         completed_at = datetime.now(UTC)
         revision = f"sync-{completed_at.strftime('%Y%m%d%H%M%S%f')}-{uuid4().hex[:8]}"
@@ -97,25 +103,33 @@ class CatalogReconciler:
         )
 
     def _observe(
-        self, root: LibraryRoot, changed_paths: list[Path] | None
-    ) -> tuple[dict[str, SkillSnapshot], list[str]]:
-        snapshots: dict[str, SkillSnapshot] = {}
+        self,
+        root: LibraryRoot,
+        changed_paths: list[Path] | None,
+        current: dict[str, dict[str, str]],
+    ) -> tuple[dict[str, SkillSnapshot | None], list[str]]:
+        snapshots: dict[str, SkillSnapshot | None] = {}
         warnings: list[str] = []
         for path in self._skill_files(root, changed_paths):
             try:
                 stat = path.stat()
                 fingerprint = (stat.st_size, stat.st_mtime_ns)
-                # The cheap stat comparison always precedes parsing/content hashing.  The
-                # fingerprint is retained for watcher callers; the database remains the source
-                # of truth across process restarts.
-                self._fingerprints[path] = fingerprint
                 relative_path = path.relative_to(root.path).as_posix()
                 identity = skill_id(root.provider, root.scope.value, relative_path)
+                known = current.get(relative_path)
+                if (
+                    known is not None
+                    and known["status"] == SkillStatus.ACTIVE.value
+                    and self._fingerprints.get(path)
+                    == (fingerprint[0], fingerprint[1], known["snapshot_id"])
+                ):
+                    snapshots[relative_path] = None
+                    continue
                 try:
                     parsed = parse_skill(
                         path.parent, provider=Provider(root.provider), scope=Scope(root.scope.value)
                     )
-                    snapshots[relative_path] = SkillSnapshot(
+                    snapshot = SkillSnapshot(
                         snapshot_id=snapshot_id(identity, parsed.content_hash),
                         skill_id=identity,
                         root_id=root.root_id,
@@ -131,9 +145,11 @@ class CatalogReconciler:
                         outputs=parsed.outputs,
                         indexed_at=datetime.now(UTC),
                     )
+                    snapshots[relative_path] = snapshot
+                    self._fingerprints[path] = (*fingerprint, snapshot.snapshot_id)
                 except SkillParseError as error:
                     content_hash = f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}"
-                    snapshots[relative_path] = SkillSnapshot(
+                    snapshot = SkillSnapshot(
                         snapshot_id=snapshot_id(identity, content_hash),
                         skill_id=identity,
                         root_id=root.root_id,
@@ -144,9 +160,26 @@ class CatalogReconciler:
                         indexed_at=datetime.now(UTC),
                         parse_error=str(error),
                     )
+                    snapshots[relative_path] = snapshot
+                    self._fingerprints[path] = (*fingerprint, snapshot.snapshot_id)
             except OSError as error:
                 warnings.append(f"cannot inspect {path}: {error}")
         return snapshots, warnings
+
+    def _current_state(self, root: LibraryRoot) -> dict[str, dict[str, str]]:
+        with self.repository.database.connect() as connection:
+            rows = connection.execute(
+                """SELECT relative_path, status, current_snapshot_id
+                   FROM skills WHERE root_id = ?""",
+                (root.root_id,),
+            ).fetchall()
+        return {
+            row["relative_path"]: {
+                "status": row["status"],
+                "snapshot_id": row["current_snapshot_id"],
+            }
+            for row in rows
+        }
 
     @staticmethod
     def _skill_files(root: LibraryRoot, changed_paths: list[Path] | None) -> list[Path]:
@@ -157,9 +190,9 @@ class CatalogReconciler:
                 return []
         selected: set[Path] = set()
         for changed in changed_paths:
-            path = Path(changed)
+            path = CatalogReconciler._changed_path(root, changed)
             try:
-                path.resolve().relative_to(root.path.resolve())
+                path.relative_to(root.path.resolve())
             except (OSError, ValueError):
                 continue
             candidate = path if path.name == "SKILL.md" else CatalogReconciler._skill_file_for(path, root.path)
@@ -183,13 +216,13 @@ class CatalogReconciler:
         self,
         connection: sqlite3.Connection,
         roots: list[LibraryRoot],
-        observations: dict[str, dict[str, SkillSnapshot]],
+        observations: dict[str, dict[str, SkillSnapshot | None]],
         changed_paths: list[Path] | None,
     ) -> tuple[int, int, int]:
         added = updated = removed = 0
         for root in roots:
             current = connection.execute(
-                """SELECT skills.skill_id, skills.relative_path, skills.status,
+                """SELECT skills.skill_id, skills.relative_path, skills.status, skills.current_snapshot_id AS snapshot_id,
                           skill_snapshots.content_hash, skill_snapshots.status AS snapshot_status
                    FROM skills JOIN skill_snapshots ON skills.current_snapshot_id = skill_snapshots.snapshot_id
                    WHERE skills.root_id = ?""",
@@ -198,17 +231,23 @@ class CatalogReconciler:
             previous = {row["relative_path"]: row for row in current}
             observed = observations[root.root_id]
             for relative_path, item in observed.items():
+                if item is None:
+                    continue
                 before = previous.get(relative_path)
                 if before is not None and before["content_hash"] == item.content_hash and before[
                     "snapshot_status"
-                ] == item.status.value:
+                ] == item.status.value and before["status"] == item.status.value:
                     continue
                 if before is None:
                     added += 1
                 else:
                     updated += 1
                 self._upsert_snapshot(connection, item)
-                if before is None and item.status is SkillStatus.ACTIVE and self.embedding is not None:
+                if (
+                    item.status is SkillStatus.ACTIVE
+                    and self.embedding is not None
+                    and (before is None or before["snapshot_id"] != item.snapshot_id)
+                ):
                     vector = self.embedding.encode([self._embedding_text(item)])[0]
                     self._save_vector(connection, item, vector)
             candidates = previous if changed_paths is None else {
@@ -229,12 +268,25 @@ class CatalogReconciler:
 
     @staticmethod
     def _is_changed(root: LibraryRoot, relative_path: str, changed_paths: list[Path]) -> bool:
-        skill_path = root.path / relative_path
+        skill_path = CatalogReconciler._normalized_path(root.path / relative_path)
         for changed in changed_paths:
-            changed_path = Path(changed)
+            changed_path = CatalogReconciler._normalized_path(
+                CatalogReconciler._changed_path(root, changed)
+            )
             if changed_path == skill_path or changed_path == skill_path.parent:
                 return True
         return False
+
+    @staticmethod
+    def _changed_path(root: LibraryRoot, changed: Path) -> Path:
+        path = Path(changed)
+        if not path.is_absolute():
+            path = root.path / path
+        return path.resolve(strict=False)
+
+    @staticmethod
+    def _normalized_path(path: Path) -> Path:
+        return Path(os.path.normcase(str(path.resolve(strict=False))))
 
     @staticmethod
     def _upsert_root(connection: sqlite3.Connection, root: LibraryRoot) -> None:

@@ -66,6 +66,26 @@ def test_reconcile_marks_deleted_skill_missing_without_deleting_history(tmp_path
     assert len(repository.list_snapshots(current.skill_id)) == 1
 
 
+def test_reconcile_restores_deleted_skill_with_the_same_content(tmp_path: Path) -> None:
+    root = _root(tmp_path)
+    path = _write_skill(root)
+    original_content = path.read_text(encoding="utf-8")
+    repository, reconciler = _reconciler(tmp_path)
+
+    reconciler.reconcile([root])
+    path.unlink()
+    path.parent.rmdir()
+    reconciler.reconcile([root])
+    path.parent.mkdir()
+    path.write_text(original_content, encoding="utf-8")
+    summary = reconciler.reconcile([root])
+
+    restored = repository.get_current_skill(skill_id("codex", "project", "example/SKILL.md"))
+    assert summary.updated == 1
+    assert restored is not None
+    assert restored.status is SkillStatus.ACTIVE
+
+
 def test_reconcile_records_invalid_skill_and_continues_other_files(tmp_path: Path) -> None:
     root = _root(tmp_path)
     _write_skill(root)
@@ -104,7 +124,23 @@ def test_reconcile_changed_paths_only_reprocesses_the_affected_skill(tmp_path: P
     assert after["Other"] == before["Other"]
 
 
-def test_reconcile_embeds_new_active_snapshots_only(tmp_path: Path) -> None:
+def test_reconcile_relative_deleted_changed_path_marks_skill_missing(tmp_path: Path) -> None:
+    root = _root(tmp_path)
+    path = _write_skill(root)
+    repository, reconciler = _reconciler(tmp_path)
+    reconciler.reconcile([root])
+    path.unlink()
+    path.parent.rmdir()
+
+    summary = reconciler.reconcile([root], changed_paths=[Path("example/SKILL.md")])
+
+    current = repository.get_current_skill(skill_id("codex", "project", "example/SKILL.md"))
+    assert summary.removed == 1
+    assert current is not None
+    assert current.status is SkillStatus.MISSING
+
+
+def test_reconcile_embeds_each_new_snapshot_but_not_restoration(tmp_path: Path) -> None:
     class Embedding:
         model_id = "test-v1"
 
@@ -116,13 +152,43 @@ def test_reconcile_embeds_new_active_snapshots_only(tmp_path: Path) -> None:
             return [[0.5] for _ in texts]
 
     root = _root(tmp_path)
-    _write_skill(root)
+    path = _write_skill(root)
     repository, _ = _reconciler(tmp_path)
     embedding = Embedding()
     reconciler = CatalogReconciler(repository, embedding=embedding)
 
     reconciler.reconcile([root])
+    path.write_text("---\nname: Example\ndescription: changed\n---\nNew body\n", encoding="utf-8")
+    reconciler.reconcile([root])
+    restored_content = path.read_text(encoding="utf-8")
+    path.unlink()
+    path.parent.rmdir()
+    reconciler.reconcile([root])
+    path.parent.mkdir()
+    path.write_text(restored_content, encoding="utf-8")
     reconciler.reconcile([root])
 
-    assert len(embedding.calls) == 1
-    assert repository.get_vectors("test-v1")[0].content_hash.startswith("sha256:")
+    assert len(embedding.calls) == 2
+    assert len(repository.get_vectors("test-v1")) == 2
+
+
+def test_reconcile_skips_parse_and_hash_for_unchanged_fingerprint(tmp_path: Path, monkeypatch) -> None:
+    root = _root(tmp_path)
+    _write_skill(root)
+    _, reconciler = _reconciler(tmp_path)
+    from skillcheck.catalog import reconcile as reconcile_module
+
+    original_parse = reconcile_module.parse_skill
+    calls = 0
+
+    def counting_parse(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original_parse(*args, **kwargs)
+
+    monkeypatch.setattr(reconcile_module, "parse_skill", counting_parse)
+
+    reconciler.reconcile([root])
+    reconciler.reconcile([root])
+
+    assert calls == 1
