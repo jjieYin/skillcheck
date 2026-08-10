@@ -24,8 +24,10 @@ class DetectionResult(BaseModel):
     agent: AgentId
     cli_path: Path | None = None
     config_path: Path | None = None
+    instruction_path: Path | None = None
     skill_paths: list[Path] = Field(default_factory=list)
     mcp_configured: bool = False
+    instructions_configured: bool = False
     supports_global: bool = True
     supports_project: bool = True
     supports_review: bool = False
@@ -58,4 +60,3 @@ class AgentTarget(Protocol):
     def uninstall(self, scope: str): ...
 
     def validate(self, scope: str): ...
-

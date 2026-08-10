@@ -19,14 +19,19 @@ class ClaudeTarget(McpTarget):
         *,
         global_config: Path | str | None = None,
         project_config: Path | str | None = None,
+        global_instructions: Path | str | None = None,
+        project_instructions: Path | str | None = None,
         launcher: str = "skillcheck",
         cli_search_path: Iterable[Path] | None = None,
         skill_paths: Iterable[Path] | None = None,
     ) -> None:
         effective_global = global_config or config_path or Path.home() / ".claude.json"
+        effective_project = project_config or Path.cwd() / ".claude" / "settings.json"
         super().__init__(
             global_config=effective_global,
-            project_config=project_config,
+            project_config=effective_project,
+            global_instructions=global_instructions or Path.home() / ".claude" / "CLAUDE.md",
+            project_instructions=project_instructions or Path.cwd() / ".claude" / "CLAUDE.md",
             launcher=launcher,
             cli_search_path=cli_search_path,
             skill_paths=skill_paths,

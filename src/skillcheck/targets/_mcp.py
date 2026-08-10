@@ -17,6 +17,11 @@ from skillcheck.targets.config_io import (
     render_document,
     write_mcp_entry,
 )
+from skillcheck.targets.instructions import (
+    InstructionChange,
+    InstructionManager,
+    InstructionWriteResult,
+)
 
 
 class McpTarget:
@@ -32,6 +37,8 @@ class McpTarget:
         *,
         global_config: Path | str | None = None,
         project_config: Path | str | None = None,
+        global_instructions: Path | str | None = None,
+        project_instructions: Path | str | None = None,
         launcher: str = "skillcheck",
         cli_search_path: Iterable[Path] | None = None,
         skill_paths: Iterable[Path] | None = None,
@@ -40,6 +47,12 @@ class McpTarget:
             global_config = config_path
         self.global_config = Path(global_config).expanduser() if global_config else None
         self.project_config = Path(project_config).expanduser() if project_config else None
+        self.global_instructions = (
+            Path(global_instructions).expanduser() if global_instructions else None
+        )
+        self.project_instructions = (
+            Path(project_instructions).expanduser() if project_instructions else None
+        )
         self.launcher = launcher
         self.cli_search_path = list(cli_search_path) if cli_search_path is not None else None
         self._skill_paths = [Path(item).expanduser() for item in skill_paths or ()]
@@ -77,11 +90,46 @@ class McpTarget:
                 search_path=self.cli_search_path,
             ),
             config_path=existing,
+            instruction_path=self._detected_instruction_path(),
             skill_paths=[path for path in self._skill_paths if path.exists()],
             mcp_configured=self._has_entry(existing) if existing else False,
+            instructions_configured=self._instructions_configured(),
             supports_global=self.global_config is not None,
             supports_project=self.project_config is not None,
         )
+
+    def _detected_instruction_path(self) -> Path | None:
+        for path in (self.global_instructions, self.project_instructions):
+            if path is not None and path.exists():
+                return path
+        return self.global_instructions or self.project_instructions
+
+    def _instructions_configured(self) -> bool:
+        for path in (self.global_instructions, self.project_instructions):
+            if path is not None and InstructionManager(path).validate():
+                return True
+        return False
+
+    def instruction_path_for(self, scope: str) -> Path:
+        normalized = scope.casefold()
+        path = self.global_instructions if normalized == "global" else self.project_instructions
+        if normalized not in {"global", "project"}:
+            raise ValueError("scope must be global or project")
+        if path is None:
+            raise ValueError(f"{self.agent.value} has no {normalized} instruction path")
+        return path
+
+    def preview_instructions(self, scope: str, instructions: str) -> InstructionChange:
+        return InstructionManager(self.instruction_path_for(scope)).preview(instructions)
+
+    def install_instructions(self, change: InstructionChange) -> InstructionWriteResult:
+        return InstructionManager(change.path).apply(change)
+
+    def uninstall_instructions(self, scope: str) -> InstructionWriteResult:
+        return InstructionManager(self.instruction_path_for(scope)).uninstall()
+
+    def validate_instructions(self, scope: str) -> bool:
+        return InstructionManager(self.instruction_path_for(scope)).validate()
 
     def _has_entry(self, path: Path) -> bool:
         document, _, _ = load_document(path, self.format)

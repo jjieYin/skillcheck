@@ -7,6 +7,7 @@ from skillcheck.commands.add import register as register_add
 from skillcheck.commands.compat import register as register_compat
 from skillcheck.commands.doctor import register as register_doctor
 from skillcheck.commands.init import register as register_init
+from skillcheck.commands.install import register as register_install
 from skillcheck.commands.report import register as register_report
 from skillcheck.commands.scan import register as register_scan
 from skillcheck.commands.serve import register as register_serve
@@ -46,6 +47,7 @@ register_uninstall(app)
 register_compat(app)
 register_init(app)
 register_sync(app)
+register_install(app)
 
 
 if __name__ == "__main__":
