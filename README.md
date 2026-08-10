@@ -56,6 +56,8 @@ skillcheck report show REPORT_ID --json
 
 ## 旧命令兼容
 
+`doctor` 默认只读检查运行环境；`doctor --fix` 只生成白名单修复计划，必须显式确认。
+
 `init`、`audit`、`check`、`list` 和 `install` 在 v0.2 中保留一个兼容周期，
 分别对应 `setup`、`scan`、`add --check-only`、索引查看和旧报告安装流程。运行时会
 提示新的推荐写法；脚本可逐步迁移，不需要一次性修改。

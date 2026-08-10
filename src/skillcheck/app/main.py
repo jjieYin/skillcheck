@@ -5,6 +5,7 @@ import typer
 from skillcheck import __version__
 from skillcheck.commands.add import register as register_add
 from skillcheck.commands.compat import register as register_compat
+from skillcheck.commands.doctor import register as register_doctor
 from skillcheck.commands.report import register as register_report
 from skillcheck.commands.scan import register as register_scan
 from skillcheck.commands.serve import register as register_serve
@@ -36,4 +37,5 @@ register_report(app)
 register_add(app)
 register_setup(app)
 register_serve(app)
+register_doctor(app)
 register_compat(app)
