@@ -12,6 +12,13 @@ from skillcheck.core.decisions import RuleDecision, RuleDecisionEngine
 from skillcheck.core.retrieval import cosine_top_k
 from skillcheck.models import AuditGroup, CandidateMatch, Finding, Provider, Severity, SkillRecord
 
+RELATION_MAP = {
+    "SIMILAR": "HIGH_OVERLAP_CANDIDATE",
+    "CONFLICT": "CONFLICT_CANDIDATE",
+    "VARIANT": "VARIANT_CANDIDATE",
+    "UNSAFE": "SECURITY_ISSUE",
+}
+
 
 @dataclass(frozen=True)
 class AuditScope:
@@ -183,13 +190,7 @@ def _global_findings(findings: list[Finding] | dict[str, list[Finding]]) -> list
 
 
 def _audit_relation(decision: RuleDecision) -> str:
-    return {
-        "DUPLICATE": "EXACT_DUPLICATE",
-        "SIMILAR": "HIGH_OVERLAP",
-        "VARIANT": "VARIANT_GROUP",
-        "CONFLICT": "CONFLICT_GROUP",
-        "UNSAFE": "QUALITY_ISSUE",
-    }.get(decision.decision.value, "QUALITY_ISSUE")
+    return RELATION_MAP.get(decision.decision.value, "QUALITY_ISSUE")
 
 
 def _groups_from_pairs(pair_evidence: dict[tuple[str, str], PairEvidence]) -> list[AuditGroup]:
@@ -278,9 +279,10 @@ def _dedupe(values: Iterable[str]) -> list[str]:
 
 def _relation_priority(relation: str) -> int:
     return {
-        "QUALITY_ISSUE": 0,
-        "EXACT_DUPLICATE": 1,
-        "CONFLICT_GROUP": 2,
-        "VARIANT_GROUP": 3,
-        "HIGH_OVERLAP": 4,
+        "EXACT_DUPLICATE": 0,
+        "CONFLICT_CANDIDATE": 1,
+        "VARIANT_CANDIDATE": 2,
+        "HIGH_OVERLAP_CANDIDATE": 3,
+        "SECURITY_ISSUE": 4,
+        "QUALITY_ISSUE": 5,
     }.get(relation, 9)
