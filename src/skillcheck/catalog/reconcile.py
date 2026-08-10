@@ -31,7 +31,7 @@ class CatalogReconciler:
     def __init__(self, repository: CatalogRepository, *, embedding=None) -> None:
         self.repository = repository
         self.embedding = embedding
-        self._fingerprints: dict[Path, tuple[int, int, str]] = {}
+        self._fingerprints: dict[Path, tuple[tuple[tuple[str, int, int], ...], str]] = {}
 
     def reconcile(
         self, roots: list[LibraryRoot], changed_paths: list[Path] | None = None
@@ -112,8 +112,7 @@ class CatalogReconciler:
         warnings: list[str] = []
         for path in self._skill_files(root, changed_paths):
             try:
-                stat = path.stat()
-                fingerprint = (stat.st_size, stat.st_mtime_ns)
+                fingerprint = self._directory_fingerprint(path.parent)
                 relative_path = path.relative_to(root.path).as_posix()
                 identity = skill_id(root.provider, root.scope.value, relative_path)
                 known = current.get(relative_path)
@@ -121,7 +120,7 @@ class CatalogReconciler:
                     known is not None
                     and known["status"] == SkillStatus.ACTIVE.value
                     and self._fingerprints.get(path)
-                    == (fingerprint[0], fingerprint[1], known["snapshot_id"])
+                    == (fingerprint, known["snapshot_id"])
                 ):
                     snapshots[relative_path] = None
                     continue
@@ -146,7 +145,7 @@ class CatalogReconciler:
                         indexed_at=datetime.now(UTC),
                     )
                     snapshots[relative_path] = snapshot
-                    self._fingerprints[path] = (*fingerprint, snapshot.snapshot_id)
+                    self._fingerprints[path] = (fingerprint, snapshot.snapshot_id)
                 except SkillParseError as error:
                     content_hash = f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}"
                     snapshot = SkillSnapshot(
@@ -161,10 +160,27 @@ class CatalogReconciler:
                         parse_error=str(error),
                     )
                     snapshots[relative_path] = snapshot
-                    self._fingerprints[path] = (*fingerprint, snapshot.snapshot_id)
+                    self._fingerprints[path] = (fingerprint, snapshot.snapshot_id)
             except OSError as error:
                 warnings.append(f"cannot inspect {path}: {error}")
         return snapshots, warnings
+
+    @staticmethod
+    def _directory_fingerprint(skill_root: Path) -> tuple[tuple[str, int, int], ...]:
+        """Return a deterministic metadata fingerprint for all safe Skill files."""
+        resolved_root = skill_root.resolve()
+        files: list[tuple[str, int, int]] = []
+        for candidate in skill_root.rglob("*"):
+            if ".git" in candidate.parts or candidate.is_symlink() or not candidate.is_file():
+                continue
+            try:
+                resolved = candidate.resolve()
+                resolved.relative_to(resolved_root)
+                stat = candidate.stat()
+            except (OSError, ValueError):
+                continue
+            files.append((candidate.relative_to(skill_root).as_posix(), stat.st_size, stat.st_mtime_ns))
+        return tuple(sorted(files))
 
     def _current_state(self, root: LibraryRoot) -> dict[str, dict[str, str]]:
         with self.repository.database.connect() as connection:
@@ -280,9 +296,14 @@ class CatalogReconciler:
     @staticmethod
     def _changed_path(root: LibraryRoot, changed: Path) -> Path:
         path = Path(changed)
-        if not path.is_absolute():
-            path = root.path / path
-        return path.resolve(strict=False)
+        cwd_path = path.resolve(strict=False)
+        try:
+            cwd_path.relative_to(root.path.resolve())
+            return cwd_path
+        except ValueError:
+            if not path.is_absolute():
+                return (root.path / path).resolve(strict=False)
+            return cwd_path
 
     @staticmethod
     def _normalized_path(path: Path) -> Path:

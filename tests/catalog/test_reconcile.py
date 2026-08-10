@@ -124,6 +124,22 @@ def test_reconcile_changed_paths_only_reprocesses_the_affected_skill(tmp_path: P
     assert after["Other"] == before["Other"]
 
 
+def test_reconcile_asset_change_updates_the_skill_snapshot(tmp_path: Path) -> None:
+    root = _root(tmp_path)
+    _write_skill(root)
+    asset = root.path / "example" / "reference.txt"
+    asset.write_text("first", encoding="utf-8")
+    repository, reconciler = _reconciler(tmp_path)
+    reconciler.reconcile([root])
+    before = repository.list_current_skills()[0].snapshot_id
+    asset.write_text("changed asset", encoding="utf-8")
+
+    summary = reconciler.reconcile([root], changed_paths=[asset])
+
+    assert summary.updated == 1
+    assert repository.list_current_skills()[0].snapshot_id != before
+
+
 def test_reconcile_relative_deleted_changed_path_marks_skill_missing(tmp_path: Path) -> None:
     root = _root(tmp_path)
     path = _write_skill(root)
@@ -136,6 +152,43 @@ def test_reconcile_relative_deleted_changed_path_marks_skill_missing(tmp_path: P
 
     current = repository.get_current_skill(skill_id("codex", "project", "example/SKILL.md"))
     assert summary.removed == 1
+    assert current is not None
+    assert current.status is SkillStatus.MISSING
+
+
+def test_reconcile_cwd_relative_changed_path_updates_skill(tmp_path: Path, monkeypatch) -> None:
+    project = tmp_path / "project"
+    root_path = project / ".codex" / "skills"
+    root_path.mkdir(parents=True)
+    root = LibraryRoot(root_id="root-1", path=root_path, provider="codex", scope=RootScope.PROJECT)
+    path = _write_skill(root)
+    repository, reconciler = _reconciler(tmp_path)
+    reconciler.reconcile([root])
+    path.write_text("---\nname: Example\ndescription: changed\n---\nBody\n", encoding="utf-8")
+    monkeypatch.chdir(project)
+
+    summary = reconciler.reconcile([root], changed_paths=[Path(".codex/skills/example/SKILL.md")])
+
+    assert summary.updated == 1
+    assert repository.list_current_skills()[0].description == "changed"
+
+
+def test_reconcile_cwd_relative_deleted_path_marks_skill_missing(tmp_path: Path, monkeypatch) -> None:
+    project = tmp_path / "project"
+    root_path = project / ".codex" / "skills"
+    root_path.mkdir(parents=True)
+    root = LibraryRoot(root_id="root-1", path=root_path, provider="codex", scope=RootScope.PROJECT)
+    path = _write_skill(root)
+    repository, reconciler = _reconciler(tmp_path)
+    reconciler.reconcile([root])
+    path.unlink()
+    path.parent.rmdir()
+    monkeypatch.chdir(project)
+
+    summary = reconciler.reconcile([root], changed_paths=[Path(".codex/skills/example/SKILL.md")])
+
+    assert summary.removed == 1
+    current = repository.get_current_skill(skill_id("codex", "project", "example/SKILL.md"))
     assert current is not None
     assert current.status is SkillStatus.MISSING
 
