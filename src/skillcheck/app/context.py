@@ -6,8 +6,11 @@ from pathlib import Path
 from typing import Any
 
 from skillcheck.config import AppConfig, load_or_create_config
+from skillcheck.installation.executor import InstallationExecutor
+from skillcheck.installation.planner import InstallationPlanner
 from skillcheck.models.report import ScanOutcome, ScanRun
 from skillcheck.models.review import AgentReview, ReviewStatus
+from skillcheck.pipelines.add_pipeline import AddPipeline
 from skillcheck.pipelines.scan_pipeline import ScanPipeline
 from skillcheck.reports import ReportBuilder
 from skillcheck.service import SkillCheckService, build_service
@@ -130,4 +133,18 @@ def build_scan_pipeline(config_path: Path | str | None = None) -> ScanPipeline:
     context.reports = ReportBuilder(config.reports_path)
     context.review_pipeline = NoAgentReview()
     context.outcomes = OutcomeFactory()
-    return ScanPipeline(context)
+    pipeline = ScanPipeline(context)
+    pipeline.config = config
+    return pipeline
+
+
+def build_add_pipeline(config_path: Path | str | None = None) -> AddPipeline:
+    config = load_or_create_config(config_path)
+    service = build_service(config)
+    pipeline = AddPipeline(
+        checker=service,
+        planner=InstallationPlanner(staging_parent=config.staging_path),
+        executor=InstallationExecutor(),
+    )
+    pipeline.config = config
+    return pipeline

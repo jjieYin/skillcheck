@@ -3,6 +3,7 @@ from __future__ import annotations
 import typer
 
 from skillcheck import __version__
+from skillcheck.commands.add import register as register_add
 from skillcheck.commands.report import register as register_report
 from skillcheck.commands.scan import register as register_scan
 
@@ -27,3 +28,4 @@ def version() -> None:
 
 register_scan(app)
 register_report(app)
+register_add(app)
