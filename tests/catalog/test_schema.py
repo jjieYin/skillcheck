@@ -67,3 +67,43 @@ def test_existing_v4_catalog_with_placeholder_tables_is_rejected(tmp_path) -> No
 
     with pytest.raises(IncompatibleCatalogError, match="reinitialize"):
         CatalogDatabase(path).initialize()
+
+
+def test_existing_v4_catalog_with_matching_columns_but_missing_constraints_is_rejected(
+    tmp_path,
+) -> None:
+    path = tmp_path / "index.db"
+    expected_columns = CatalogDatabase._expected_columns()
+    with sqlite3.connect(path) as connection:
+        for table, columns in expected_columns.items():
+            definition = ", ".join(f"{column} TEXT" for column in columns)
+            connection.execute(f"CREATE TABLE {table} ({definition})")
+        connection.execute("INSERT INTO schema_meta(key, value) VALUES ('schema_version', '4')")
+        connection.execute(
+            "CREATE VIRTUAL TABLE skill_fts USING fts5("
+            "snapshot_id UNINDEXED, name, description, body)"
+        )
+
+    with pytest.raises(IncompatibleCatalogError, match="reinitialize"):
+        CatalogDatabase(path).initialize()
+
+
+@pytest.mark.parametrize(
+    "fts_definition",
+    [
+        "CREATE TABLE skill_fts (snapshot_id TEXT, name TEXT, description TEXT, body TEXT)",
+        (
+            "CREATE VIRTUAL TABLE skill_fts USING fts5("
+            "snapshot_id UNINDEXED, name, description, body, extra)"
+        ),
+    ],
+)
+def test_existing_v4_catalog_with_invalid_fts_definition_is_rejected(tmp_path, fts_definition) -> None:
+    database = CatalogDatabase(tmp_path / "index.db")
+    database.initialize()
+    with sqlite3.connect(database.path) as connection:
+        connection.execute("DROP TABLE skill_fts")
+        connection.execute(fts_definition)
+
+    with pytest.raises(IncompatibleCatalogError, match="reinitialize"):
+        database.initialize()

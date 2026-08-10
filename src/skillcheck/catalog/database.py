@@ -61,7 +61,7 @@ class CatalogDatabase:
             ) from error
 
     def _create_schema(self) -> None:
-        schema = files("skillcheck.catalog").joinpath("schema.sql").read_text(encoding="utf-8")
+        schema = self._schema_sql()
         statements = [statement.strip() for statement in schema.split(";") if statement.strip()]
         try:
             with self.connect() as connection:
@@ -103,37 +103,45 @@ class CatalogDatabase:
 
     @classmethod
     def _has_expected_structure(cls, connection: sqlite3.Connection) -> bool:
-        objects = {
-            row["name"]: row
-            for row in connection.execute(
-                "SELECT name, type, sql FROM sqlite_master WHERE name IN "
-                f"({','.join('?' for _ in cls._expected_tables())})",
-                tuple(cls._expected_tables()),
-            ).fetchall()
-        }
-        for table, columns in cls._expected_columns().items():
-            schema_object = objects.get(table)
-            if schema_object is None or schema_object["type"] != "table":
+        actual = cls._schema_objects(connection)
+        expected = cls._canonical_schema_objects()
+        for table in cls._expected_tables():
+            actual_object = actual.get(table)
+            expected_object = expected.get(table)
+            if actual_object is None or expected_object is None:
                 return False
-            actual_columns = [
-                row["name"]
-                for row in connection.execute(f"PRAGMA table_info({table})").fetchall()
-            ]
-            if actual_columns != columns:
+            if actual_object["type"] != expected_object["type"]:
                 return False
+            if cls._normalize_definition(actual_object["sql"]) != cls._normalize_definition(
+                expected_object["sql"]
+            ):
+                return False
+        return True
 
-        skill_fts = objects.get("skill_fts")
-        if skill_fts is None or skill_fts["type"] != "table":
-            return False
-        definition = re.sub(r"\s+", "", skill_fts["sql"] or "").lower()
-        if not definition.startswith("createvirtualtableskill_ftsusingfts5("):
-            return False
-        if "snapshot_idunindexed,name,description,body" not in definition:
-            return False
-        fts_columns = [
-            row["name"] for row in connection.execute("PRAGMA table_info(skill_fts)").fetchall()
-        ]
-        return fts_columns == ["snapshot_id", "name", "description", "body"]
+    @classmethod
+    def _canonical_schema_objects(cls) -> dict[str, sqlite3.Row]:
+        with sqlite3.connect(":memory:") as connection:
+            connection.row_factory = sqlite3.Row
+            connection.executescript(cls._schema_sql())
+            return cls._schema_objects(connection)
+
+    @classmethod
+    def _schema_sql(cls) -> str:
+        return files("skillcheck.catalog").joinpath("schema.sql").read_text(encoding="utf-8")
+
+    @staticmethod
+    def _normalize_definition(definition: str | None) -> str:
+        return re.sub(r"\s+", "", definition or "").lower()
+
+    @classmethod
+    def _schema_objects(cls, connection: sqlite3.Connection) -> dict[str, sqlite3.Row]:
+        tables = tuple(cls._expected_tables())
+        placeholders = ",".join("?" for _ in tables)
+        rows = connection.execute(
+            "SELECT name, type, sql FROM sqlite_master WHERE name IN " f"({placeholders})",
+            tables,
+        ).fetchall()
+        return {row["name"]: row for row in rows}
 
     @classmethod
     def _expected_tables(cls) -> set[str]:
