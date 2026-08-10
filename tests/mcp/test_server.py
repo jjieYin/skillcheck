@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 
-from skillcheck.mcp.server import TOOL_NAMES, create_server
+from skillcheck.mcp.server import TOOL_NAMES, create_server, run_stdio
 from skillcheck.mcp.tools import SkillcheckQueries
 
 
@@ -21,3 +21,26 @@ def test_server_registers_exact_tool_names() -> None:
     tools = asyncio.run(server.list_tools())
     assert {tool.name for tool in tools} == TOOL_NAMES
 
+
+def test_stdio_starts_and_stops_catalog_runtime(monkeypatch, tmp_path) -> None:
+    calls: list[str] = []
+
+    class Runtime:
+        def start(self):
+            calls.append("start")
+
+        def stop(self):
+            calls.append("stop")
+
+    class Server:
+        def run(self, transport):
+            calls.append(transport)
+
+    config = SimpleNamespace(reports_path=tmp_path / "reports")
+    monkeypatch.setattr("skillcheck.mcp.server.load_or_create_config", lambda _: config)
+    monkeypatch.setattr("skillcheck.mcp.server.McpRuntime", lambda value: Runtime())
+    monkeypatch.setattr("skillcheck.mcp.server.create_server", lambda _: Server())
+
+    run_stdio(tmp_path / "config.yaml")
+
+    assert calls == ["start", "stdio", "stop"]

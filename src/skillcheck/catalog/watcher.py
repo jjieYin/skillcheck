@@ -9,7 +9,10 @@ from typing import Any
 
 try:
     from watchfiles import watch
+    WATCHFILES_AVAILABLE = True
 except ImportError:  # pragma: no cover - exercised when optional runtime dependency is absent
+    WATCHFILES_AVAILABLE = False
+
     def watch(*args: Any, **kwargs: Any):
         raise RuntimeError("watchfiles is unavailable")
         yield set()
@@ -32,6 +35,7 @@ class CatalogWatcher:
         self.watch_factory = watch_factory
         self.warning: str | None = None
         self._stop_event = Event()
+        self._startup_complete = Event()
         self._lock = Lock()
         self._thread: Thread | None = None
 
@@ -40,14 +44,25 @@ class CatalogWatcher:
         thread = self._thread
         return thread is not None and thread.is_alive() and not self._stop_event.is_set()
 
+    @property
+    def startup_error(self) -> str | None:
+        """Return an error raised while opening the watch, if any."""
+        return self.warning if self._startup_complete.is_set() else None
+
+    @property
+    def available(self) -> bool:
+        return WATCHFILES_AVAILABLE or self.watch_factory is not watch
+
     def start(self) -> None:
         with self._lock:
             if self.running:
                 return
             self.warning = None
             self._stop_event.clear()
+            self._startup_complete.clear()
             self._thread = Thread(target=self._run, name="skillcheck-catalog-watcher", daemon=True)
             self._thread.start()
+        self._startup_complete.wait(timeout=5)
 
     def stop(self) -> None:
         with self._lock:
@@ -58,14 +73,20 @@ class CatalogWatcher:
 
     def _run(self) -> None:
         try:
-            for changes in self.watch_factory(
-                *(str(root) for root in self.roots),
-                debounce=self.debounce_ms,
-                stop_event=self._stop_event,
-            ):
+            iterator = iter(
+                self.watch_factory(
+                    *(str(root) for root in self.roots),
+                    debounce=self.debounce_ms,
+                    stop_event=self._stop_event,
+                )
+            )
+            self._startup_complete.set()
+            for changes in iterator:
                 paths = {Path(path).expanduser().resolve() for _, path in changes}
                 if paths:
                     self.on_changes(paths)
         except Exception as error:  # noqa: BLE001 - watcher failures are intentionally degraded
             if not self._stop_event.is_set():
                 self.warning = str(error)
+        finally:
+            self._startup_complete.set()

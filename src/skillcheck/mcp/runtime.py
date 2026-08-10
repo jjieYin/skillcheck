@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from collections.abc import Callable
 from pathlib import Path
-from threading import Lock
+from threading import Lock, RLock
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -44,56 +44,78 @@ class McpRuntime:
     ) -> None:
         self.config = config
         self.home = Path.home() if home is None else Path(home).expanduser()
-        self.project_path = Path.cwd() if project_path is None else Path(project_path).expanduser()
+        self._project_path = Path.cwd() if project_path is None else Path(project_path).expanduser()
+        self._project_path_explicit = project_path is not None
         self.repository = repository
         self.reconciler = reconciler
         self.watcher_factory = watcher_factory
         self.watcher: CatalogWatcher | None = None
         self.pending: set[Path] = set()
         self._pending_lock = Lock()
+        self._query_lock = Lock()
+        self._lifecycle_lock = RLock()
         self._revision: str | None = None
         self._warnings: list[str] = []
         self._project_roots_added = 0
         self._started = False
 
+    @property
+    def project_path(self) -> Path:
+        return self._project_path
+
+    @project_path.setter
+    def project_path(self, value: Path | str) -> None:
+        self._project_path = Path(value).expanduser()
+        self._project_path_explicit = True
+
     def start(self) -> RuntimeStatus:
-        if self._started:
-            return self.status()
-        self._started = True
-        if not self.config.catalog.initialized:
-            return self.status()
-        self._ensure_catalog()
-        assert self.repository is not None
-        assert self.reconciler is not None
-        roots = self._register_project_roots()
-        summary = self.reconciler.reconcile(roots)
-        self._revision = summary.revision
-        self._warnings.extend(summary.warnings)
-        self.watcher = self.watcher_factory(
-            [root.path for root in roots if root.enabled],
-            self._on_changes,
-            debounce_ms=self.config.catalog.debounce_ms,
-        )
-        self.watcher.start()
-        if self.watcher.warning:
-            self._warnings.append(self.watcher.warning)
-        return self.status()
-
-    def stop(self) -> None:
-        if self.watcher is not None:
-            self.watcher.stop()
-
-    def before_query(self) -> RuntimeStatus:
-        if not self.config.catalog.initialized:
-            return self.status()
-        with self._pending_lock:
-            changed_paths = sorted(self.pending)
-            self.pending.clear()
-        if changed_paths and self.reconciler is not None and self.repository is not None:
-            summary = self.reconciler.reconcile(self.repository.list_roots(), changed_paths=changed_paths)
+        with self._lifecycle_lock:
+            if self._started:
+                return self.status()
+            self._started = True
+            if not self.config.catalog.initialized:
+                return self.status()
+            if not self._project_path_explicit:
+                self._project_path = Path.cwd()
+            self._ensure_catalog()
+            assert self.repository is not None
+            assert self.reconciler is not None
+            roots = self._register_project_roots()
+            summary = self.reconciler.reconcile(roots)
             self._revision = summary.revision
             self._warnings.extend(summary.warnings)
-        return self.status()
+            self.watcher = self.watcher_factory(
+                [root.path for root in roots if root.enabled],
+                self._on_changes,
+                debounce_ms=self.config.catalog.debounce_ms,
+            )
+            if getattr(self.watcher, "available", True):
+                self.watcher.start()
+            else:
+                self.watcher.warning = "watchfiles is unavailable"
+            if self.watcher.warning:
+                self._warnings.append(self.watcher.warning)
+            return self.status()
+
+    def stop(self) -> None:
+        with self._lifecycle_lock:
+            if self.watcher is not None:
+                self.watcher.stop()
+
+    def before_query(self) -> RuntimeStatus:
+        with self._query_lock:
+            if not self.config.catalog.initialized:
+                return self.status()
+            with self._pending_lock:
+                changed_paths = sorted(self.pending)
+                self.pending.clear()
+            if changed_paths and self.reconciler is not None and self.repository is not None:
+                summary = self.reconciler.reconcile(
+                    self.repository.list_roots(), changed_paths=changed_paths
+                )
+                self._revision = summary.revision
+                self._warnings.extend(summary.warnings)
+            return self.status()
 
     def is_stale(self, paths: list[Path | str]) -> bool:
         evidence_paths = [self._normalized_path(path) for path in paths]

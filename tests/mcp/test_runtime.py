@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from threading import Event, Thread
 
 from skillcheck.catalog.database import CatalogDatabase
 from skillcheck.catalog.models import RootScope, SyncSummary
@@ -142,3 +143,69 @@ def test_runtime_reports_watcher_failure_as_degraded(tmp_path: Path) -> None:
 
     assert status.state == "degraded"
     assert status.warnings == ["watch unavailable"]
+
+
+def test_runtime_uses_current_project_directory_when_started(tmp_path: Path, monkeypatch) -> None:
+    project = tmp_path / "project"
+    skills = project / ".codex" / "skills"
+    skills.mkdir(parents=True)
+    config = _config(tmp_path)
+    database = CatalogDatabase(config.index_path)
+    database.initialize()
+    runtime = McpRuntime(
+        config,
+        CatalogRepository(database),
+        RecordingReconciler(),
+        home=tmp_path / "home",
+        watcher_factory=RecordingWatcher,
+    )
+    monkeypatch.chdir(project)
+
+    runtime.start()
+
+    assert any(root.path == skills.resolve() for root in runtime.repository.list_roots())
+
+
+def test_before_query_serializes_incremental_reconciles(tmp_path: Path) -> None:
+    class BlockingReconciler(RecordingReconciler):
+        def __init__(self) -> None:
+            super().__init__()
+            self.entered = Event()
+            self.release = Event()
+            self.active = 0
+            self.max_active = 0
+
+        def reconcile(self, roots, changed_paths=None) -> SyncSummary:
+            if changed_paths is None:
+                return super().reconcile(roots, changed_paths)
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+            self.entered.set()
+            self.release.wait(1)
+            self.active -= 1
+            return super().reconcile(roots, changed_paths)
+
+    config = _config(tmp_path)
+    database = CatalogDatabase(config.index_path)
+    database.initialize()
+    reconciler = BlockingReconciler()
+    runtime = McpRuntime(
+        config,
+        CatalogRepository(database),
+        reconciler,
+        project_path=tmp_path,
+        watcher_factory=RecordingWatcher,
+    )
+    runtime.start()
+    runtime._on_changes({tmp_path / "first" / "SKILL.md"})
+    first = Thread(target=runtime.before_query)
+    first.start()
+    assert reconciler.entered.wait(1)
+    runtime._on_changes({tmp_path / "second" / "SKILL.md"})
+    second = Thread(target=runtime.before_query)
+    second.start()
+    reconciler.release.set()
+    first.join(1)
+    second.join(1)
+
+    assert reconciler.max_active == 1

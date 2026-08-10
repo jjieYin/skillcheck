@@ -9,6 +9,7 @@ from mcp.server.fastmcp import FastMCP
 from skillcheck.config import load_or_create_config
 from skillcheck.mcp.instructions import MCP_INSTRUCTIONS
 from skillcheck.mcp.repositories import FileRepositories
+from skillcheck.mcp.runtime import McpRuntime
 from skillcheck.mcp.tools import SkillcheckQueries
 
 TOOL_NAMES = {"skillcheck_summary", "skillcheck_groups", "skillcheck_report"}
@@ -36,9 +37,11 @@ def create_server(queries: SkillcheckQueries | None = None) -> FastMCP:
 
 
 def run_stdio(config_path: Path | str | None = None) -> None:
-    queries = None
-    if config_path is not None:
-        config = load_or_create_config(config_path)
-        queries = SkillcheckQueries(FileRepositories(config.reports_path))
-    create_server(queries).run("stdio")
-
+    config = load_or_create_config(config_path)
+    queries = SkillcheckQueries(FileRepositories(config.reports_path))
+    runtime = McpRuntime(config)
+    runtime.start()
+    try:
+        create_server(queries).run("stdio")
+    finally:
+        runtime.stop()
