@@ -11,6 +11,7 @@ from skillcheck.commands.report import register as register_report
 from skillcheck.commands.scan import register as register_scan
 from skillcheck.commands.serve import register as register_serve
 from skillcheck.commands.setup import register as register_setup
+from skillcheck.commands.sync import register as register_sync
 from skillcheck.commands.uninstall import register as register_uninstall
 from skillcheck.commands.upgrade import register as register_upgrade
 
@@ -44,6 +45,7 @@ register_upgrade(app)
 register_uninstall(app)
 register_compat(app)
 register_init(app)
+register_sync(app)
 
 
 if __name__ == "__main__":
