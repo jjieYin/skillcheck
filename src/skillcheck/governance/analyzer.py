@@ -161,7 +161,12 @@ class GovernanceAnalyzer:
         run_id = f"run-{uuid4().hex}"
         by_skill = {item.skill_id: item for item in selected}
         self.repository.save_run(
-            run_id, kind=mode.value, revision=revision, groups=groups, snapshots_by_skill=by_skill
+            run_id,
+            kind=mode.value,
+            revision=revision,
+            groups=groups,
+            snapshots_by_skill=by_skill,
+            findings=audit.findings,
         )
         return AnalyzeResult(
             run_id=run_id,

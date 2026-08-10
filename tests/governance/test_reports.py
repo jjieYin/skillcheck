@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime
 
@@ -62,3 +63,49 @@ def test_generated_report_has_five_sections_and_hides_skill_bodies(tmp_path) -> 
     assert "local_findings" in payload
     assert "must-not-appear-in-report" not in markdown
     assert "must-not-appear-in-report" not in saved.json_path.read_text(encoding="utf-8")
+
+    with catalog.database.connect() as connection:
+        hashes = {
+            row["format"]: row["content_hash"]
+            for row in connection.execute("SELECT format, content_hash FROM reports").fetchall()
+        }
+    assert hashes["json"] == "sha256:" + hashlib.sha256(saved.json_path.read_bytes()).hexdigest()
+
+
+def test_generated_report_includes_local_deterministic_findings(tmp_path) -> None:
+    database = CatalogDatabase(tmp_path / "catalog.db")
+    database.initialize()
+    catalog = CatalogRepository(database)
+    catalog.upsert_root(
+        LibraryRoot(root_id="root-1", path=tmp_path / "skills", provider="codex", scope=RootScope.PROJECT)
+    )
+    for skill_id in ("skill-a", "skill-b"):
+        catalog.upsert_snapshot(
+            SkillSnapshot(
+                snapshot_id=f"snapshot-{skill_id}",
+                skill_id=skill_id,
+                root_id="root-1",
+                relative_path=f"{skill_id}/SKILL.md",
+                name=skill_id,
+                description="",
+                body="short",
+                content_hash="sha256:duplicate",
+                indexed_at=datetime(2026, 8, 10, tzinfo=UTC),
+            )
+        )
+    result = GovernanceAnalyzer(catalog).analyze_library(limit=20)
+    saved = ReviewService(catalog, tmp_path / "reports").save(
+        result.run_id,
+        [
+            GroupDecision(
+                group_id=result.groups[0].group_id,
+                decision=GovernanceDecision.MANUAL_REVIEW,
+                confidence=0.5,
+                reason="Keep for manual review.",
+            )
+        ],
+    )
+
+    payload = json.loads(saved.json_path.read_text(encoding="utf-8"))
+    assert payload["local_findings"]
+    assert any(item["rule_id"] == "FMT002" for item in payload["local_findings"])

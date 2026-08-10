@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING
 
 from skillcheck.models.governance import GroupDecision
 
+from .redaction import redact_value
+
 if TYPE_CHECKING:
     from skillcheck.governance.repository import ReviewContext
 
@@ -28,12 +30,12 @@ def build_report(context: ReviewContext, decisions: list[GroupDecision]) -> Repo
         }
         for group in context.groups
     ]
-    rendered_decisions = [item.model_dump(mode="json") for item in decisions]
+    rendered_decisions = [redact_value(item.model_dump(mode="json")) for item in decisions]
     payload: dict[str, object] = {
         "run_id": context.run_id,
         "revision": context.revision,
         "snapshot_ids": sorted({snapshot for group in groups for snapshot in group["snapshot_ids"]}),
-        "local_findings": [],
+        "local_findings": redact_value(context.local_findings),
         "groups": groups,
         "agent_decisions": rendered_decisions,
         "generated_at": datetime.now(UTC).isoformat(),

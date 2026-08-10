@@ -11,6 +11,8 @@ from skillcheck.governance.reports import build_report
 from skillcheck.governance.repository import GovernanceRepository
 from skillcheck.models.governance import GroupDecision, SavedReview
 
+from .redaction import redact_text
+
 
 class StaleAnalysisError(ValueError):
     """Raised when an Agent decision no longer matches the analyzed snapshots."""
@@ -22,16 +24,40 @@ class ReviewService:
     def __init__(self, catalog: CatalogRepository, reports_path: Path | str) -> None:
         self.catalog = catalog
         self.repository = GovernanceRepository(catalog)
-        self.reports_path = Path(reports_path)
+        candidate = Path(reports_path).expanduser().resolve(strict=False)
+        allowed = (catalog.database.path.expanduser().resolve(strict=False).parent / "reports").resolve(
+            strict=False
+        )
+        if candidate != allowed and allowed not in candidate.parents:
+            raise ValueError("report directory must remain inside the Skillcheck catalog report area")
+        self.reports_path = candidate
 
     def save(self, run_id: str, decisions: list[GroupDecision]) -> SavedReview:
         context = self.repository.review_context(run_id)
         self._validate(context, decisions)
+        decisions = [
+            item.model_copy(
+                update={
+                    "reason": redact_text(item.reason),
+                    "recommendations": [redact_text(value) for value in item.recommendations],
+                }
+            )
+            for item in decisions
+        ]
         review_id = f"review-{uuid4().hex}"
         content = build_report(context, decisions)
         markdown_path = self.reports_path / f"{review_id}.md"
         json_path = self.reports_path / f"{review_id}.json"
-        self._write_reports(markdown_path, json_path, content.markdown, content.json)
+        markdown_bytes = content.markdown.encode("utf-8")
+        json_bytes = (
+            json.dumps(content.json, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8") + b"\n"
+        )
+        self._publish_reports(
+            markdown_path,
+            json_path,
+            markdown_bytes,
+            json_bytes,
+        )
         try:
             self.repository.save_review(
                 review_id=review_id,
@@ -41,6 +67,8 @@ class ReviewService:
                 json_path=json_path,
                 markdown=content.markdown,
                 json_payload=content.json,
+                markdown_bytes=markdown_bytes,
+                json_bytes=json_bytes,
             )
         except Exception:
             markdown_path.unlink(missing_ok=True)
@@ -74,27 +102,40 @@ class ReviewService:
             raise StaleAnalysisError("analysis snapshots have changed; analyze again before saving")
 
     @staticmethod
-    def _write_reports(
-        markdown_path: Path, json_path: Path, markdown: str, payload: dict[str, object]
+    def _publish_reports(
+        markdown_path: Path,
+        json_path: Path,
+        markdown_bytes: bytes,
+        json_bytes: bytes,
     ) -> None:
         markdown_path.parent.mkdir(parents=True, exist_ok=True)
-        _atomic_write(markdown_path, markdown.encode("utf-8"))
-        _atomic_write(
-            json_path,
-            json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8") + b"\n",
-        )
+        staged: list[tuple[Path, Path]] = []
+        published: list[Path] = []
+        try:
+            for path, content in ((markdown_path, markdown_bytes), (json_path, json_bytes)):
+                staged.append((_stage_file(path, content), path))
+            for temporary, destination in staged:
+                os.replace(temporary, destination)
+                published.append(destination)
+        except Exception:
+            for temporary, _destination in staged:
+                temporary.unlink(missing_ok=True)
+            for destination in published:
+                destination.unlink(missing_ok=True)
+            raise
 
 
-def _atomic_write(path: Path, content: bytes) -> None:
+def _stage_file(path: Path, content: bytes) -> Path:
     temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
     try:
         with temporary.open("xb") as output:
             output.write(content)
             output.flush()
             os.fsync(output.fileno())
-        os.replace(temporary, path)
-    finally:
+        return temporary
+    except Exception:
         temporary.unlink(missing_ok=True)
+        raise
 
 
 def content_hash(content: str | bytes) -> str:

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from skillcheck.catalog.models import SkillSnapshot
 from skillcheck.catalog.repository import CatalogRepository
 from skillcheck.governance.models import CandidateGroupSummary
+from skillcheck.models.audit import Finding
 
 if TYPE_CHECKING:
     from skillcheck.models.governance import GroupDecision
@@ -28,6 +29,7 @@ class ReviewContext:
     run_id: str
     revision: str
     groups: list[ReviewGroup]
+    local_findings: list[dict[str, object]]
     is_current: bool
 
 
@@ -45,6 +47,7 @@ class GovernanceRepository:
         revision: str,
         groups: list[CandidateGroupSummary],
         snapshots_by_skill: dict[str, SkillSnapshot],
+        findings: list[Finding] | None = None,
     ) -> None:
         now = datetime.now(UTC).isoformat()
         with self.catalog.database.connect() as connection:
@@ -54,9 +57,19 @@ class GovernanceRepository:
                     """
                     INSERT INTO analysis_runs(run_id, kind, revision, started_at, completed_at, status,
                                               parameters_json, warnings_json)
-                    VALUES (?, ?, ?, ?, ?, 'complete', '{}', '[]')
+                    VALUES (?, ?, ?, ?, ?, 'complete', ?, '[]')
                     """,
-                    (run_id, kind, revision, now, now),
+                    (
+                        run_id,
+                        kind,
+                        revision,
+                        now,
+                        now,
+                        json.dumps(
+                            {"local_findings": [item.model_dump(mode="json") for item in (findings or [])]},
+                            ensure_ascii=False,
+                        ),
+                    ),
                 )
                 for group in groups:
                     stored_group_id = _stored_group_id(run_id, group.group_id)
@@ -118,6 +131,8 @@ class GovernanceRepository:
         json_path: Path,
         markdown: str,
         json_payload: dict[str, object],
+        markdown_bytes: bytes,
+        json_bytes: bytes,
     ) -> None:
         """Commit decisions and report index rows as a single catalog transaction."""
         from skillcheck.governance.reviews import StaleAnalysisError, content_hash
@@ -147,9 +162,9 @@ class GovernanceRepository:
                             now,
                         ),
                     )
-                for report_format, path, content in (
-                    ("markdown", markdown_path, markdown),
-                    ("json", json_path, json.dumps(json_payload, ensure_ascii=False, sort_keys=True)),
+                for report_format, path in (
+                    ("markdown", markdown_path),
+                    ("json", json_path),
                 ):
                     connection.execute(
                         """
@@ -161,7 +176,9 @@ class GovernanceRepository:
                             context.run_id,
                             report_format,
                             str(path),
-                            content_hash(content),
+                            content_hash(
+                                markdown_bytes if report_format == "markdown" else json_bytes
+                            ),
                             now,
                         ),
                     )
@@ -172,12 +189,13 @@ class GovernanceRepository:
 
     def _review_context(self, connection, run_id: str) -> ReviewContext:
         run = connection.execute(
-            "SELECT revision, status FROM analysis_runs WHERE run_id = ?", (run_id,)
+            "SELECT revision, status, parameters_json FROM analysis_runs WHERE run_id = ?", (run_id,)
         ).fetchone()
         if run is None:
             raise ValueError(f"unknown analysis run: {run_id}")
         if run["status"] != "complete":
             raise ValueError("analysis run is not complete")
+        parameters = json.loads(run["parameters_json"] or "{}")
         rows = connection.execute(
             """
             SELECT candidate_groups.group_id AS stored_group_id,
@@ -222,6 +240,7 @@ class GovernanceRepository:
             run_id=run_id,
             revision=run["revision"],
             groups=list(grouped.values()),
+            local_findings=parameters.get("local_findings", []),
             is_current=current,
         )
 
