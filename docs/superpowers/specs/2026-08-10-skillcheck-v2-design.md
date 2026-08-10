@@ -1,6 +1,6 @@
 # Skillcheck v2：自包含分发、简化 CLI 与 Agent 辅助复核设计
 
-- 状态：第一、二、三部分已确认
+- 状态：第一、二、三、四部分已确认，已进入实施计划阶段
 - 日期：2026-08-10
 - 目标用户：在个人电脑上同时使用 Codex、Claude Code、Cursor 等 Agent，并需要管理本地 Skills 的个人开发者
 - 设计参照：[CodeGraph](https://github.com/colbymchenry/codegraph)
