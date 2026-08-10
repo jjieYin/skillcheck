@@ -38,6 +38,23 @@ def test_each_mcp_tool_syncs_runtime_before_query() -> None:
     assert calls == ["before_query", "before_query", "before_query"]
 
 
+def test_mcp_tools_return_not_initialized_status(monkeypatch) -> None:
+    repositories = SimpleNamespace(
+        reports=SimpleNamespace(latest_summary=dict, get_public=lambda report_id: {}),
+        groups=SimpleNamespace(list_public=lambda **kwargs: []),
+    )
+    status = SimpleNamespace(
+        state="not_initialized",
+        model_dump=lambda **kwargs: {"state": "not_initialized", "initialized": False},
+    )
+    runtime = SimpleNamespace(before_query=lambda: status)
+    server = create_server(SkillcheckQueries(repositories), runtime=runtime)
+
+    result = asyncio.run(server.call_tool("skillcheck_summary", {}))
+
+    assert "not_initialized" in str(result)
+
+
 def test_stdio_starts_and_stops_catalog_runtime(monkeypatch, tmp_path) -> None:
     calls: list[str] = []
 

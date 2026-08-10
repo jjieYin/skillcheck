@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import inspect
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from threading import Event, Lock, Thread, current_thread
@@ -37,7 +36,6 @@ class CatalogWatcher:
         self.warning: str | None = None
         self._stop_event = Event()
         self._startup_complete = Event()
-        self._factory_created = Event()
         self._lock = Lock()
         self._thread: Thread | None = None
 
@@ -57,14 +55,7 @@ class CatalogWatcher:
 
     @property
     def startup_pending(self) -> bool:
-        return self._uses_startup_callback and not self._startup_complete.is_set()
-
-    @property
-    def _uses_startup_callback(self) -> bool:
-        try:
-            return "startup_ready" in inspect.signature(self.watch_factory).parameters
-        except (TypeError, ValueError):
-            return False
+        return not self._startup_complete.is_set() and self.warning is None
 
     def start(self) -> None:
         with self._lock:
@@ -73,12 +64,9 @@ class CatalogWatcher:
             self.warning = None
             self._stop_event.clear()
             self._startup_complete.clear()
-            self._factory_created.clear()
             self._thread = Thread(target=self._run, name="skillcheck-catalog-watcher", daemon=True)
             self._thread.start()
-        (self._startup_complete if self._uses_startup_callback else self._factory_created).wait(
-            timeout=5
-        )
+        self._startup_complete.wait(timeout=1)
 
     def stop(self) -> None:
         with self._lock:
@@ -90,16 +78,17 @@ class CatalogWatcher:
     def _run(self) -> None:
         try:
             options = {"debounce": self.debounce_ms, "stop_event": self._stop_event}
-            if self._uses_startup_callback:
-                options["startup_ready"] = self._startup_ready
+            if self.watch_factory is watch and WATCHFILES_AVAILABLE:
+                options.update({"yield_on_timeout": True, "step": 100})
             iterator = iter(
                 self.watch_factory(
                     *(str(root) for root in self.roots),
                     **options,
                 )
             )
-            self._factory_created.set()
-            for changes in iterator:
+            while not self._stop_event.is_set():
+                changes = next(iterator)
+                self._startup_complete.set()
                 paths = {Path(path).expanduser().resolve() for _, path in changes}
                 if paths:
                     self.on_changes(paths)
@@ -107,10 +96,4 @@ class CatalogWatcher:
             if not self._stop_event.is_set():
                 self.warning = str(error)
         finally:
-            self._factory_created.set()
             self._startup_complete.set()
-
-    def _startup_ready(self, error: str | None = None) -> None:
-        if error:
-            self.warning = error
-        self._startup_complete.set()

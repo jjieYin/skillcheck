@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
@@ -26,19 +27,25 @@ def create_server(
     @server.tool(name="skillcheck_summary", description="读取最近一次 Skill 治理摘要")
     def skillcheck_summary() -> dict[str, object]:
         if runtime is not None:
-            runtime.before_query()
+            status = runtime.before_query()
+            if getattr(status, "state", None) == "not_initialized":
+                return status.model_dump(mode="json")
         return queries.summary()
 
     @server.tool(name="skillcheck_groups", description="读取重复、重叠和冲突分组的脱敏证据")
-    def skillcheck_groups(relation: str | None = None, limit: int = 20) -> list[dict[str, object]]:
+    def skillcheck_groups(relation: str | None = None, limit: int = 20) -> Any:
         if runtime is not None:
-            runtime.before_query()
+            status = runtime.before_query()
+            if getattr(status, "state", None) == "not_initialized":
+                return status.model_dump(mode="json")
         return queries.groups(relation=relation, limit=limit)
 
     @server.tool(name="skillcheck_report", description="读取指定报告的脱敏结果")
     def skillcheck_report(report_id: str) -> dict[str, object]:
         if runtime is not None:
-            runtime.before_query()
+            status = runtime.before_query()
+            if getattr(status, "state", None) == "not_initialized":
+                return status.model_dump(mode="json")
         return queries.report(report_id)
 
     return server
