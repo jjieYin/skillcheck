@@ -1,11 +1,11 @@
 from skillcheck.config import AppConfig, load_or_create_config, yaml_payload
 
 
-def test_new_config_has_v2_sections_and_no_secret(tmp_path) -> None:
+def test_new_config_has_v4_sections_and_no_secret(tmp_path) -> None:
     config = load_or_create_config(tmp_path / "config.yaml", home=tmp_path)
     payload = yaml_payload(config)
-    assert payload["schema_version"] == 2
-    assert {"scan", "review", "targets", "reports", "privacy"} <= payload.keys()
+    assert payload["schema_version"] == 4
+    assert {"scan", "review", "targets", "reports", "privacy", "catalog"} <= payload.keys()
     assert "sk-live-example" not in str(payload)
 
 

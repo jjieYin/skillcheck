@@ -12,7 +12,7 @@ from skillcheck.config.models import AppConfig, app_home
 
 def yaml_payload(config: AppConfig) -> dict[str, Any]:
     return {
-        "schema_version": 2,
+        "schema_version": 4,
         "scan_paths": [str(path) for path in config.scan_paths],
         "index_path": str(config.index_path),
         "reports_path": str(config.reports_path),
@@ -29,6 +29,7 @@ def yaml_payload(config: AppConfig) -> dict[str, Any]:
         "llm": config.llm.model_dump(mode="json"),
         "security": config.security.model_dump(mode="json"),
         "thresholds": config.thresholds.model_dump(mode="json"),
+        "catalog": config.catalog.model_dump(mode="json"),
         "legacy": config.legacy,
     }
 

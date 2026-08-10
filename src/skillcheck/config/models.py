@@ -94,10 +94,17 @@ class PrivacyConfig(BaseModel):
     include_body_excerpts: bool = True
 
 
+class CatalogConfig(BaseModel):
+    initialized: bool = False
+    roots: list[Path] = Field(default_factory=list)
+    debounce_ms: int = Field(default=2000, ge=100, le=60000)
+    reconcile_before_query: bool = True
+
+
 class AppConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    schema_version: int = 2
+    schema_version: int = 4
     scan_paths: list[Path] = Field(default_factory=list)
     index_path: Path
     reports_path: Path
@@ -111,6 +118,7 @@ class AppConfig(BaseModel):
     llm: LLMConfig = Field(default_factory=LLMConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     thresholds: ThresholdConfig = Field(default_factory=ThresholdConfig)
+    catalog: CatalogConfig = Field(default_factory=CatalogConfig)
     legacy: dict[str, object] = Field(default_factory=dict)
 
     @property
