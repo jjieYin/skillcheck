@@ -370,11 +370,14 @@ git commit -m "refactor: define v2 domain models"
 - Delete: `src/skillcheck/config.py`
 - Test: `tests/config/test_migration.py`
 - Test: `tests/config/test_loader.py`
+- Modify: `tests/test_config.py`
 
 - [ ] **Step 1: 写 v1→v2 迁移和无交互复核默认值测试**
 
 ```python
 import yaml
+
+from pathlib import Path
 
 from skillcheck.config.loader import load_or_create_config
 
@@ -384,9 +387,10 @@ def test_v1_config_is_backed_up_and_migrated(tmp_path) -> None:
     path.write_text(yaml.safe_dump({"extra_paths": ["D:/skills"], "llm": {"enabled": True}}), encoding="utf-8")
     config = load_or_create_config(path, home=tmp_path)
     assert config.schema_version == 2
-    assert config.scan.extra_paths == ["D:/skills"]
+    assert config.scan.extra_paths == [Path("D:/skills")]
     assert config.review.mode == "ask"
     assert config.review.direct_api_compat is False
+    assert config.llm.enabled is False
     assert path.with_suffix(".yaml.v1.bak").exists()
 
 
@@ -428,11 +432,82 @@ class ReviewConfig(BaseModel):
     direct_api_compat: bool = False
 
 
+class EmbeddingConfig(BaseModel):
+    backend: str = "hash"
+    model_id: str = "hash-v1"
+    dimensions: int = 256
+    local_model: str | None = None
+
+
+class LLMConfig(BaseModel):
+    enabled: bool = False
+    provider: str = "openai"
+    model: str = "qwen-plus"
+    base_url: str | None = None
+    api_key_env: str | None = None
+    allow_full_text: bool = False
+
+    @property
+    def api_key(self) -> str | None:
+        import os
+
+        return os.environ.get(self.api_key_env) if self.api_key_env else None
+
+
+class SecurityConfig(BaseModel):
+    enabled: bool = True
+    skill_spector_command: str | None = None
+    timeout_seconds: int = 30
+
+
+class ThresholdConfig(BaseModel):
+    top_k: int = 5
+    duplicate_similarity: float = 0.98
+    overlap_similarity: float = 0.86
+    variant_similarity: float = 0.82
+    conflict_similarity: float = 0.80
+
+
 class AppConfig(BaseModel):
     schema_version: int = 2
-    state_dir: Path
+    scan_paths: list[Path] = Field(default_factory=list)
+    index_path: Path
+    reports_path: Path
+    staging_path: Path
     scan: ScanConfig = Field(default_factory=ScanConfig)
     review: ReviewConfig = Field(default_factory=ReviewConfig)
+    embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
+    llm: LLMConfig = Field(default_factory=LLMConfig)
+    security: SecurityConfig = Field(default_factory=SecurityConfig)
+    thresholds: ThresholdConfig = Field(default_factory=ThresholdConfig)
+    legacy: dict[str, object] = Field(default_factory=dict)
+
+    @property
+    def extra_paths(self) -> list[Path]:
+        return self.scan.extra_paths
+
+    @extra_paths.setter
+    def extra_paths(self, value: list[Path]) -> None:
+        self.scan.extra_paths = value
+
+    @classmethod
+    def default(cls, home: Path | str | None = None) -> "AppConfig":
+        user_home = Path(home).expanduser() if home is not None else Path.home()
+        state = app_home(home)
+        return cls(
+            scan_paths=_unique_paths([
+                user_home / ".codex" / "skills",
+                user_home / ".agents" / "skills",
+                user_home / ".claude" / "skills",
+                user_home / ".cursor" / "rules",
+                Path.cwd() / ".codex" / "skills",
+                Path.cwd() / ".agents" / "skills",
+                Path.cwd() / ".claude" / "skills",
+            ]),
+            index_path=state / "index.db",
+            reports_path=state / "reports",
+            staging_path=state / "staging",
+        )
 
     def effective_review_mode(self, *, interactive: bool, cli_value: str | None) -> str:
         if cli_value is not None:
@@ -441,6 +516,8 @@ class AppConfig(BaseModel):
             return "none"
         return self.review.mode
 ```
+
+`AppConfig` 必须继续提供 v1 使用的 `scan_paths`、`extra_paths`、`index_path`、`reports_path`、`staging_path`、`embedding`、`llm`、`security` 和 `thresholds`；其中 `extra_paths` 读写代理到 `scan.extra_paths`。这样 Task 3 完成后旧 discovery/service/CLI 可以继续运行。配置文件同时写入 `schema_version: 2`、`scan`、`review`、`targets`、`reports`、`privacy` 和兼容存储字段。
 
 迁移函数必须先复制为 `config.yaml.v1.bak`，将 `extra_paths` 移入 `scan.extra_paths`，保留旧 `llm` 数据到 `legacy.llm`，将 `review.direct_api_compat` 设为 `false`，最后通过临时文件和 `Path.replace()` 原子写入。`config/__init__.py` 显式导出旧代码使用的 `AppConfig`、`app_home`、`load_or_create_config` 后删除旧 `config.py`，避免同名冲突。
 
