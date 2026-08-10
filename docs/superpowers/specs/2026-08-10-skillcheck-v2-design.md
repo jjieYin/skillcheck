@@ -741,6 +741,553 @@ skillcheck uninstall
 
 默认保留索引、报告、用户配置和已经安装的 Skills。卸载前展示具体文件路径；只移除 Skillcheck 写入的 Agent 配置。Windows 由卸载辅助进程在主进程退出后删除程序文件，并输出无法自动清理的残留路径。
 
+## 第四部分：模块重构、数据结构、迭代范围与验收标准
+
+### 4.1 重构目标
+
+当前版本的主要问题不是基础能力不足，而是 `cli.py` 和 `service.py` 同时承担了命令参数解析、配置加载、服务构建、扫描编排、Agent 调用、报告输出和退出码处理等职责。
+
+v2 重构目标：
+
+- CLI 只负责接收用户输入和展示结果；
+- 业务流程由独立 Pipeline 编排；
+- Agent 配置与 Agent 复核分离；
+- 本地确定性结论与模型建议分离；
+- 安装、升级和卸载拥有独立安全边界；
+- 每个模块可以使用 Fake Adapter 独立测试；
+- 保留现有解析、检索、审计和安全检查能力。
+
+### 4.2 新目录结构
+
+```text
+src/skillcheck/
+├── app/
+│   ├── main.py
+│   ├── menu.py
+│   └── context.py
+├── commands/
+│   ├── setup.py
+│   ├── scan.py
+│   ├── add.py
+│   ├── doctor.py
+│   ├── upgrade.py
+│   └── uninstall.py
+├── pipelines/
+│   ├── scan_pipeline.py
+│   ├── add_pipeline.py
+│   ├── setup_pipeline.py
+│   └── review_pipeline.py
+├── core/
+│   ├── discovery.py
+│   ├── parser.py
+│   ├── retrieval.py
+│   ├── audit.py
+│   ├── decisions.py
+│   └── validators.py
+├── targets/
+│   ├── base.py
+│   ├── registry.py
+│   ├── codex.py
+│   ├── claude.py
+│   ├── cursor.py
+│   └── agents.py
+├── reviewers/
+│   ├── base.py
+│   ├── registry.py
+│   ├── codex.py
+│   ├── claude.py
+│   └── schemas/
+│       └── agent-review.schema.json
+├── sources/
+│   ├── local.py
+│   ├── archive.py
+│   ├── github.py
+│   └── staging.py
+├── installation/
+│   ├── planner.py
+│   ├── executor.py
+│   ├── manifest.py
+│   └── rollback.py
+├── reports/
+│   ├── builder.py
+│   ├── markdown.py
+│   ├── json_report.py
+│   └── viewer.py
+├── storage/
+│   ├── database.py
+│   ├── migrations.py
+│   ├── repositories.py
+│   └── schema/
+├── lifecycle/
+│   ├── doctor.py
+│   ├── upgrade.py
+│   ├── uninstall.py
+│   └── release_manifest.py
+├── mcp/
+│   ├── server.py
+│   ├── tools.py
+│   └── instructions.py
+├── config/
+│   ├── models.py
+│   ├── loader.py
+│   └── migration.py
+└── models/
+    ├── skill.py
+    ├── audit.py
+    ├── review.py
+    ├── report.py
+    └── installation.py
+```
+
+### 4.3 现有模块迁移
+
+| 当前文件 | v2 去向 |
+|---|---|
+| `cli.py` | 拆为 `app/` 和 `commands/` |
+| `service.py` | 拆为 `pipelines/` |
+| `config.py` | 拆为 `config/models.py`、`loader.py`、`migration.py` |
+| `discovery.py` | 移入 `core/`，补充 Agent Target 提供的目录 |
+| `audit.py` | 移入 `core/`，只负责确定性治理分析 |
+| `llm.py` | 替换为 `reviewers/`，默认不再直接调用 OpenAI API |
+| `installer.py` | 拆为安装计划、执行、回滚和清单 |
+| `sources.py` | 拆为本地、ZIP、GitHub 和暂存模块 |
+| `reports.py` | 拆为报告模型、Markdown、JSON 和查看器 |
+| `store.py` | 拆为数据库、迁移和 Repository |
+| `skillspector.py` | 保留为可选 Validator Adapter |
+
+原有核心逻辑优先迁移，不进行无必要重写。
+
+### 4.4 Pipeline 边界
+
+#### ScanPipeline
+
+```python
+class ScanPipeline:
+    def run(
+        self,
+        scope: ScanScope,
+        review: ReviewMode,
+    ) -> ScanOutcome:
+        ...
+```
+
+负责：
+
+```text
+发现目录
+→ 解析
+→ 更新索引
+→ 本地审计
+→ 写基础报告
+→ 可选 Agent 复核
+→ 写最终报告
+→ 返回终端摘要
+```
+
+#### AddPipeline
+
+```python
+class AddPipeline:
+    def run(
+        self,
+        source: SkillSource,
+        targets: list[AgentId],
+        review: ReviewMode,
+    ) -> AddOutcome:
+        ...
+```
+
+负责：
+
+```text
+暂存来源
+→ 解析和安全检查
+→ 与现有库比较
+→ 可选 Agent 复核
+→ 生成安装计划
+→ 用户确认
+→ 重新校验哈希
+→ 安装
+```
+
+#### SetupPipeline
+
+负责 Agent 检测、预览、备份、写入和验证，不负责调用模型。
+
+#### ReviewPipeline
+
+只接收已经形成的模糊治理分组，不直接扫描目录或修改 Skill。
+
+### 4.5 关键数据模型
+
+#### ScanRun
+
+```python
+class ScanRun:
+    run_id: str
+    started_at: datetime
+    completed_at: datetime | None
+    scopes: list[str]
+    index_revision: str
+    capabilities: list[str]
+    skill_count: int
+    finding_count: int
+    status: str
+```
+
+用于关联一次扫描产生的分组、复核和报告。
+
+#### GovernanceGroup
+
+```python
+class GovernanceGroup:
+    group_id: str
+    relation: Relation
+    member_skill_ids: list[str]
+    similarity: float | None
+    evidence: list[Evidence]
+    rule_suggestion: str
+    requires_semantic_review: bool
+```
+
+#### Evidence
+
+```python
+class Evidence:
+    kind: str
+    source_skill_id: str
+    target_skill_id: str | None
+    value: str
+    excerpt: str | None
+    excerpt_hash: str | None
+    sensitive: bool
+```
+
+正文片段与哈希同时记录，便于证明报告引用的是扫描时内容。
+
+#### AgentReview
+
+```python
+class AgentReview:
+    review_id: str
+    run_id: str
+    agent: str
+    status: str
+    schema_version: str
+    full_text_shared: bool
+    decisions: list[AgentDecision]
+    error: str | None
+```
+
+不得存储 Agent 的 Token、API Key 或完整登录配置。
+
+#### InstallationPlan
+
+```python
+class InstallationPlan:
+    plan_id: str
+    source: str
+    source_hash: str
+    decision: str
+    targets: list[str]
+    target_paths: list[str]
+    created_at: datetime
+    expires_at: datetime
+    approval_token: str
+```
+
+执行前重新计算来源哈希。来源变化、计划过期或目标发生冲突时，计划自动失效。
+
+#### ReleaseManifest
+
+```python
+class ReleaseManifest:
+    version: str
+    platform: str
+    architecture: str
+    asset_name: str
+    sha256: str
+    data_schema_version: int
+    minimum_compatible_version: str
+```
+
+供安装器和升级器共同使用。
+
+### 4.6 配置结构升级
+
+新版配置增加显式版本：
+
+```yaml
+schema_version: 2
+
+scan:
+  extra_paths: []
+  follow_symlinks: false
+
+review:
+  mode: ask
+  preferred_agent: null
+  allow_full_text: false
+  max_groups_per_request: 10
+  timeout_seconds: 120
+
+targets:
+  configured: []
+
+reports:
+  open_after_scan: ask
+  formats:
+    - markdown
+    - json
+
+privacy:
+  redact_secrets: true
+  include_body_excerpts: true
+```
+
+`review.mode: ask` 仅在交互终端中生效，用于扫描完成后询问用户是否调用 Agent。无交互终端、CI 或脚本调用若未显式传入 `--review codex` / `--review claude`，必须自动按 `none` 执行，确保默认不消耗模型额度。
+
+旧版 `llm` 配置迁移时：
+
+- 不自动删除；
+- 备份原配置；
+- 默认停用直接 API 调用；
+- 在迁移报告中说明已改为 Agent Review Adapter；
+- 提供开发者兼容开关，但不出现在普通向导中。
+
+### 4.7 SQLite 数据结构
+
+建议增加：
+
+```text
+schema_migrations
+scan_runs
+skills
+skill_installations
+embeddings
+governance_groups
+group_members
+findings
+evidence
+agent_reviews
+reports
+installation_plans
+installed_sources
+```
+
+迁移要求：
+
+- 每个迁移具有唯一版本号；
+- 升级前备份数据库；
+- 迁移在事务中执行；
+- 失败时回滚，不启动半升级状态；
+- 新版本可以读取旧索引并自动迁移；
+- 回滚程序不得使用低版本直接写入高版本数据库；
+- `doctor` 显示当前数据库 Schema 版本。
+
+### 4.8 版本迭代范围
+
+#### v0.2.0-alpha：内部重构与命令收敛
+
+包含：
+
+- 新目录结构和 Pipeline；
+- `skillcheck` 交互菜单；
+- `scan` 合并原 `scan + audit`；
+- `add` 合并原 `check + install`；
+- 配置和数据库版本迁移；
+- 旧命令兼容转发；
+- Markdown/JSON 报告格式升级。
+
+该阶段继续使用开发安装，目标是先稳定内部边界。
+
+#### v0.3.0-beta：自包含安装和 Agent 配置
+
+包含：
+
+- Windows x64 自包含 Release；
+- `install.ps1`；
+- 稳定启动器和版本目录；
+- Codex、Claude、Cursor Target Adapter；
+- `setup` 和交互多选；
+- MCP 只读接入；
+- `doctor`；
+- 安装和配置幂等测试。
+
+这是首个面向非 Python 用户体验的版本。
+
+#### v0.4.0-beta：Agent 复核和生命周期
+
+包含：
+
+- Codex Review Adapter；
+- Claude Review Adapter；
+- 结构化复核包和 JSON Schema；
+- 报告来源分层；
+- `upgrade`、回滚和 `uninstall`；
+- Windows ARM64；
+- Linux x64 和 macOS x64/ARM64 预览包。
+
+#### v1.0.0：稳定发布
+
+包含：
+
+- 全平台 Release 自动化；
+- 安装包校验和发布清单；
+- Winget、Scoop、Homebrew 至少完成两种；
+- 完整迁移与回滚测试；
+- 安装、扫描、复核、升级和卸载文档；
+- 稳定的 MCP 只读接口；
+- 发布前安全审计。
+
+### 4.9 v2 明确不包含
+
+为控制范围，v2 不做：
+
+- 自动删除现有 Skill；
+- 自动合并两个 `SKILL.md`；
+- 自动重写现有 Skill；
+- 未经确认的安装或覆盖；
+- Cursor 模型的 CLI 语义复核；
+- 企业 Registry、RBAC 和多人审批；
+- Web 管理界面；
+- 默认下载大型本地 Embedding 模型；
+- 依赖已经弃用的 MCP Sampling；
+- 读取或复制 Agent 的登录凭据。
+
+治理报告可以给出合并、删除、改名和修改建议，但执行仍由用户完成。
+
+### 4.10 测试体系
+
+#### 单元测试
+
+覆盖：
+
+- Skill 目录发现；
+- 解析和标准化；
+- 完全重复和相似度判定；
+- 安全规则；
+- 配置迁移；
+- Agent 检测；
+- Review Schema 校验；
+- 安装计划过期和哈希失效；
+- Release Manifest 与 SHA-256 校验。
+
+#### Agent Target 合约测试
+
+每种 Target 使用临时配置 Fixture：
+
+```text
+原始配置
+→ preview
+→ install
+→ 再次 install
+→ validate
+→ uninstall
+→ 与原始配置比较
+```
+
+验收要求：
+
+- 重复安装不产生重复项；
+- 不破坏未知字段；
+- 卸载后恢复原始有效结构；
+- 只移除 Skillcheck 自己的配置。
+
+#### Review Adapter 测试
+
+CI 中不调用真实模型，使用 Fake Codex 和 Fake Claude：
+
+- 正常 JSON；
+- 非法 JSON；
+- Schema 字段缺失；
+- 超时；
+- 非零退出码；
+- 超长输出；
+- Agent 未登录；
+- 用户取消。
+
+所有失败场景必须降级到基础报告。
+
+#### CLI 测试
+
+覆盖：
+
+- 首次运行菜单；
+- 非交互模式；
+- 旧命令迁移提示；
+- `scan --review none/codex/claude`；
+- `add` 的目录、ZIP、GitHub URL；
+- 用户取消安装；
+- 报告打开失败；
+- 中文路径和空格路径。
+
+#### 安装与升级测试
+
+平台矩阵：
+
+| 平台 | 架构 | 要求 |
+|---|---|---|
+| Windows 10/11 | x64 | 必测 |
+| Windows 11 | ARM64 | beta 前完成 |
+| Ubuntu | x64 | beta 前完成 |
+| macOS | x64、ARM64 | v1.0 前完成 |
+
+场景：
+
+- 没有 Python 的干净环境安装；
+- 重复运行安装脚本；
+- PATH 中存在旧版本；
+- 下载中断；
+- 校验失败；
+- 新版本自检失败；
+- 升级成功；
+- 升级失败后仍能运行旧版本；
+- 回滚；
+- 程序卸载但保留报告；
+- 完整卸载。
+
+#### 安全测试
+
+- ZIP 路径穿越；
+- 超大压缩包和压缩炸弹；
+- 符号链接逃逸；
+- GitHub 下载重定向；
+- 来源检查后被替换；
+- Agent 返回恶意路径或命令；
+- 配置文件并发修改；
+- 删除范围越界；
+- 报告中的秘密脱敏；
+- Prompt Injection 文本不得改变本地写入策略。
+
+### 4.11 覆盖率要求
+
+- 整体代码覆盖率不低于 85%；
+- 安装、升级、卸载、安全校验模块不低于 95%；
+- 每个已修复 Bug 必须具有回归测试；
+- Release 构建必须通过单元测试、类型检查、Lint 和安装冒烟测试；
+- 真实 Agent 调用不进入普通 CI，只进入人工 Release 验收。
+
+### 4.12 最终验收标准
+
+v1.0 必须同时满足：
+
+1. Windows 干净环境无需 Python 即可安装。
+2. 用户首次运行 `skillcheck` 能自动检测 Agent 并完成配置。
+3. 重复执行 `setup` 不产生重复配置。
+4. `skillcheck scan` 一条命令完成扫描、审计和报告。
+5. 默认不调用 Agent、不消耗模型额度。
+6. 用户选择 Codex/Claude 后，复核失败仍保留基础报告。
+7. Markdown 和 JSON 报告中的结论、证据和 ID 一致。
+8. `skillcheck add` 支持目录、ZIP 和 GitHub URL。
+9. 安装前重新校验来源哈希。
+10. `doctor` 能发现 PATH 遮蔽、损坏配置、异常索引和 Agent 不可用。
+11. 升级失败不会破坏当前版本。
+12. 卸载默认保留用户 Skills、索引和报告。
+13. Agent 配置卸载后不影响其他 MCP Server。
+14. 中文路径、空格路径和非管理员用户环境通过测试。
+15. 整体测试覆盖率达到约定标准。
+
 ## 参考依据
 
 - [CodeGraph README 与 CLI 设计](https://github.com/colbymchenry/codegraph#readme)
