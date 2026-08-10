@@ -109,7 +109,10 @@ def test_save_review_redacts_agent_reason_and_recommendations(prepared) -> None:
     decision = _decision(
         result.groups[0].group_id,
         reason='Use token: "reason-secret" and api_key=rec-secret only locally.',
-        recommendations=['Remove password: "recommendation-secret" before sharing.'],
+        recommendations=[
+            'Remove password: "recommendation-secret" before sharing.',
+            'Do not persist password: "my super secret".',
+        ],
     )
 
     saved = ReviewService(catalog, reports_path).save(result.run_id, [decision])
@@ -118,6 +121,7 @@ def test_save_review_redacts_agent_reason_and_recommendations(prepared) -> None:
     assert "reason-secret" not in report_text
     assert "rec-secret" not in report_text
     assert "recommendation-secret" not in report_text
+    assert "super secret" not in report_text
     with catalog.database.connect() as connection:
         stored = connection.execute("SELECT rationale, payload_json FROM agent_reviews").fetchone()
     assert "reason-secret" not in stored[0]
