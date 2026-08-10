@@ -80,7 +80,6 @@ src/skillcheck/
 - Create: `src/skillcheck/commands/__init__.py`
 - Create: `src/skillcheck/pipelines/__init__.py`
 - Create: `src/skillcheck/core/__init__.py`
-- Create: `src/skillcheck/models/__init__.py`
 - Test: `tests/app/test_main.py`
 
 - [ ] **Step 1: 写根应用导入和版本命令的失败测试**
