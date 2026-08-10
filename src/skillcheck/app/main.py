@@ -39,3 +39,7 @@ register_setup(app)
 register_serve(app)
 register_doctor(app)
 register_compat(app)
+
+
+if __name__ == "__main__":
+    app()

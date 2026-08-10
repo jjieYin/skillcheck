@@ -15,6 +15,15 @@ python -m pip install -e ".[dev]"
 skillcheck version
 ```
 
+Windows x64 发布包提供一行安装器（从 GitHub Release 下载并校验 SHA-256）：
+
+```powershell
+irm https://raw.githubusercontent.com/jjieYin/skillcheck/main/install.ps1 | iex
+```
+
+安装器会把版本放在 `%LOCALAPPDATA%\skillcheck\versions`，用稳定的
+`%LOCALAPPDATA%\skillcheck\bin\skillcheck.cmd` 作为入口，并幂等更新用户 PATH。
+
 ```bash
 python -m pip install -e '.[dev]'
 skillcheck version
