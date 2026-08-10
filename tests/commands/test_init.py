@@ -58,3 +58,16 @@ def test_init_yes_prints_first_sync_summary(monkeypatch, tmp_path: Path) -> None
     assert result.exit_code == 0
     assert "Initialized: added 1, updated 0, invalid 0" in result.stdout
     assert pipeline.applied == [True]
+
+
+def test_init_cancel_with_real_pipeline_does_not_create_config_or_catalog(
+    monkeypatch, tmp_path: Path
+) -> None:
+    config_path = tmp_path / "state" / "config.yaml"
+    monkeypatch.setenv("SKILLCHECK_HOME", str(config_path.parent))
+
+    result = runner.invoke(app, ["init", "--config", str(config_path)], input="n\n")
+
+    assert result.exit_code == 0
+    assert not config_path.exists()
+    assert not (config_path.parent / "index.db").exists()

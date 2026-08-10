@@ -51,19 +51,21 @@ def save_config(path: Path | str, config: AppConfig) -> None:
     )
 
 
-def load_or_create_config(
+def load_config(
     path: Path | str | None = None,
     *,
     home: Path | str | None = None,
+    create: bool = True,
 ) -> AppConfig:
     config_path = Path(path).expanduser() if path is not None else app_home(home) / "config.yaml"
     if not config_path.exists():
         config = AppConfig.default(home=home)
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        _atomic_write(
-            config_path,
-            yaml.safe_dump(yaml_payload(config), sort_keys=False, allow_unicode=True),
-        )
+        if create:
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            _atomic_write(
+                config_path,
+                yaml.safe_dump(yaml_payload(config), sort_keys=False, allow_unicode=True),
+            )
         return config
 
     raw: Any = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
@@ -72,7 +74,7 @@ def load_or_create_config(
 
     defaults = yaml_payload(AppConfig.default(home=home))
     payload, migrated = migrate_payload(raw, defaults)
-    if migrated:
+    if migrated and create:
         backup = config_path.with_suffix(config_path.suffix + ".v1.bak")
         if not backup.exists():
             shutil.copy2(config_path, backup)
@@ -81,3 +83,11 @@ def load_or_create_config(
             yaml.safe_dump(payload, sort_keys=False, allow_unicode=True),
         )
     return AppConfig.model_validate(payload)
+
+
+def load_or_create_config(
+    path: Path | str | None = None,
+    *,
+    home: Path | str | None = None,
+) -> AppConfig:
+    return load_config(path, home=home)

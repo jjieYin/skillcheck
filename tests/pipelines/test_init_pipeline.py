@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from skillcheck.catalog.database import CatalogDatabase
+from skillcheck.catalog.models import SyncSummary
 from skillcheck.catalog.repository import CatalogRepository
 from skillcheck.config.models import AppConfig
 from skillcheck.pipelines.init_pipeline import InitPipeline
@@ -43,3 +44,25 @@ def test_confirmed_apply_initializes_catalog_persists_roots_and_config(tmp_path:
     assert CatalogRepository(CatalogDatabase(config.index_path)).list_roots()[0].path == root.resolve()
     assert "schema_version: 4" in config_path.read_text(encoding="utf-8")
     assert "catalog:" in config_path.read_text(encoding="utf-8")
+
+
+def test_confirmed_apply_returns_the_injected_initial_reconcile_summary(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    project = tmp_path / "project"
+    root = home / ".codex" / "skills"
+    root.mkdir(parents=True)
+    expected = SyncSummary(revision="reconciled", added=2)
+    calls = []
+    pipeline = InitPipeline(
+        AppConfig.default(home),
+        tmp_path / "config.yaml",
+        home=home,
+        project=project,
+        reconcile=lambda roots: calls.append(roots) or expected,
+    )
+
+    result = pipeline.apply(pipeline.preview(pipeline.discover([])), confirmed=True)
+
+    assert len(calls) == 1
+    assert calls[0][0].path == root.resolve()
+    assert result.sync == expected

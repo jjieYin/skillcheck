@@ -7,7 +7,7 @@ from typing import Annotated
 
 import typer
 
-from skillcheck.config import app_home, load_or_create_config
+from skillcheck.config import app_home, load_config
 from skillcheck.pipelines.init_pipeline import InitPipeline
 
 
@@ -17,7 +17,7 @@ def _config_path(path: Path | None) -> Path:
 
 def build_init_pipeline(config_path: Path | None) -> InitPipeline:
     path = _config_path(config_path)
-    return InitPipeline(load_or_create_config(path), path)
+    return InitPipeline(load_config(path, create=False), path)
 
 
 def register(app: typer.Typer) -> None:
