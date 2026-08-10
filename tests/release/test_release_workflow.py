@@ -26,3 +26,8 @@ def test_release_workflow_rejects_version_mismatched_binary() -> None:
     assert 'version_output="$($executable version)"' in WORKFLOW
     assert 'grep -F "skillcheck ${version}"' in WORKFLOW
     assert "release version mismatch" in WORKFLOW
+
+
+def test_release_workflow_uses_supported_macos_intel_runner() -> None:
+    assert "os: macos-15-intel" in WORKFLOW
+    assert "os: macos-13" not in WORKFLOW
