@@ -23,10 +23,13 @@ try {
     }
     $assetName = "skillcheck-$Version-windows-x64.zip"
     $baseUrl = "https://github.com/$Repository/releases/download/v$Version"
+    # A release asset can be replaced after a failed upload. The version query
+    # forces GitHub's CDN to resolve the current asset instead of a stale copy.
+    $downloadQuery = "?skillcheck_version=$Version"
     $asset = Join-Path $temporary $assetName
     $manifestFile = Join-Path $temporary "manifest.json"
-    Invoke-WebRequest "$baseUrl/$assetName" -OutFile $asset
-    Invoke-WebRequest "$baseUrl/manifest.json" -OutFile $manifestFile
+    Invoke-WebRequest "${baseUrl}/${assetName}${downloadQuery}" -OutFile $asset
+    Invoke-WebRequest "${baseUrl}/manifest.json${downloadQuery}" -OutFile $manifestFile
 
     $manifest = Get-Content $manifestFile -Raw | ConvertFrom-Json
     if ($manifest.asset_name -ne $assetName) { throw "Manifest 与发布文件名不一致。" }
@@ -66,4 +69,3 @@ try {
 finally {
     if (Test-Path $temporary) { Remove-Item -LiteralPath $temporary -Recurse -Force }
 }
-
