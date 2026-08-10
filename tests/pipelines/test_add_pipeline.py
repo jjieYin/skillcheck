@@ -1,13 +1,12 @@
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from skillcheck.installation.executor import InstallationExecutor
-from skillcheck.models import InstallationPlan
 from skillcheck.installation.planner import InstallationPlanner
-from skillcheck.models import Decision
+from skillcheck.models import Decision, InstallationPlan
 from skillcheck.parser import content_hash
 from skillcheck.pipelines.add_pipeline import AddPipeline, AddRequest
 from tests.helpers import check_report, write_skill

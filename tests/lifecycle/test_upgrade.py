@@ -6,7 +6,6 @@ from types import SimpleNamespace
 import pytest
 
 from skillcheck.lifecycle.upgrade import UpgradeManager
-from skillcheck.models import ReleaseManifest
 
 
 class UpgradeContext:

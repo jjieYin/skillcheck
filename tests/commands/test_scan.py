@@ -2,7 +2,6 @@ from typer.testing import CliRunner
 
 from skillcheck.app.main import app
 
-
 runner = CliRunner()
 
 

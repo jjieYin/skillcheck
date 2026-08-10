@@ -1,4 +1,7 @@
+from dataclasses import FrozenInstanceError
 from pathlib import Path
+
+from pydantic import ValidationError
 
 from skillcheck.targets.base import AgentId, ConfigChange, DetectionResult
 
@@ -15,8 +18,7 @@ def test_detection_and_change_models_are_immutable() -> None:
     assert change.changed is True
     try:
         detected.agent = AgentId.CLAUDE
-    except Exception as exc:
-        assert type(exc).__name__ in {"ValidationError", "FrozenInstanceError"}
+    except (ValidationError, FrozenInstanceError):
+        pass
     else:
         raise AssertionError("DetectionResult must be immutable")
-

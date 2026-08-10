@@ -26,7 +26,8 @@ def test_zip_size_limit_rejects_bomb(tmp_path: Path) -> None:
 
 def test_github_redirects_are_disabled(monkeypatch, tmp_path: Path) -> None:
     import subprocess
-    import skillcheck.sources as sources
+
+    from skillcheck import sources
 
     observed = {}
 

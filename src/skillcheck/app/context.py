@@ -54,13 +54,20 @@ class LegacyDiscovery:
         self.service = service
 
     def discover(self, scope):
-        for value in scope.paths:
-            path = Path(value).expanduser()
-            if path not in self.service.config.extra_paths:
-                self.service.config.extra_paths.append(path)
-        cwd = Path(scope.paths[0]) if scope.paths else None
-        inventory = self.service.scan(cwd=cwd).inventory
-        return inventory
+        if scope.paths:
+            # An explicit scan path is a bounded operation.  Do not combine it
+            # with the user's global auto-discovery paths, otherwise a command
+            # aimed at one library would silently scan every local Agent.
+            original_scan_paths = list(self.service.config.scan_paths)
+            original_extra_paths = list(self.service.config.extra_paths)
+            self.service.config.scan_paths = [Path(value).expanduser() for value in scope.paths]
+            self.service.config.extra_paths = []
+            try:
+                return self.service.scan(cwd=Path(scope.paths[0]).expanduser()).inventory
+            finally:
+                self.service.config.scan_paths = original_scan_paths
+                self.service.config.extra_paths = original_extra_paths
+        return self.service.scan().inventory
 
 
 class LegacyParser:
@@ -100,7 +107,7 @@ class LegacyAuditor:
                 (),
                 {"groups": [], "findings": [], "capabilities": ["builtin-validator"]},
             )()
-        return self.service.audit(use_llm=False).audit
+        return self.service.audit(use_llm=False, write_report=False).audit
 
 
 class NoAgentReview:

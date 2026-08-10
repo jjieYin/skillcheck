@@ -6,7 +6,6 @@ from pathlib import Path
 
 from skillcheck.storage.migrations import statements_for
 
-
 LEGACY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_meta (
     key TEXT PRIMARY KEY,

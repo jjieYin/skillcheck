@@ -1,5 +1,6 @@
 import json
 from datetime import UTC, datetime
+from typing import ClassVar
 
 from skillcheck.models.audit import GovernanceGroup, Relation
 from skillcheck.models.report import ScanRun
@@ -9,11 +10,11 @@ from skillcheck.reports.builder import ReportBuilder
 
 class Inventory:
     installation_count = 2
-    unique_skills = [object(), object()]
+    unique_skills: ClassVar[list[object]] = [object(), object()]
 
 
 class Analysis:
-    groups = [
+    groups: ClassVar[list[GovernanceGroup]] = [
         GovernanceGroup(
             group_id="overlap-001",
             relation=Relation.HIGH_OVERLAP,
@@ -23,8 +24,8 @@ class Analysis:
             requires_semantic_review=True,
         )
     ]
-    findings = []
-    capabilities = ["hash"]
+    findings: ClassVar[list[object]] = []
+    capabilities: ClassVar[list[str]] = ["hash"]
 
 
 def test_markdown_and_json_share_report_id_and_layers(tmp_path) -> None:

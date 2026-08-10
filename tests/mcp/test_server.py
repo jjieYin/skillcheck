@@ -14,7 +14,7 @@ def test_mcp_exposes_only_read_only_tools() -> None:
 
 def test_server_registers_exact_tool_names() -> None:
     repositories = SimpleNamespace(
-        reports=SimpleNamespace(latest_summary=lambda: {}, get_public=lambda report_id: {}),
+        reports=SimpleNamespace(latest_summary=dict, get_public=lambda report_id: {}),
         groups=SimpleNamespace(list_public=lambda **kwargs: []),
     )
     server = create_server(SkillcheckQueries(repositories))

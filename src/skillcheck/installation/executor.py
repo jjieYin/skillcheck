@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from skillcheck.installer import Installer
 from skillcheck.installation.rollback import InstallationRollback
+from skillcheck.installer import Installer
 from skillcheck.models import CheckReport, InstallationPlan
 
 

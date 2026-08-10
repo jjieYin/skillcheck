@@ -38,8 +38,9 @@ class UninstallManager:
         if not confirmed:
             return self.context.results.cancelled()
         if plan.remove_agent_configs:
+            scope = getattr(self.context, "agent_scope", "global")
             for target in self.context.targets.configured():
-                target.uninstall("configured")
+                target.uninstall(scope)
         if plan.remove_program:
             self.context.helpers.remove_program_after_exit(plan.exact_paths)
         self.context.data.remove_selected(plan)
@@ -57,4 +58,3 @@ class UninstallManager:
                 raise ValueError(f"卸载路径过宽：{path}")
             if owned_roots and not any(resolved == root or root in resolved.parents for root in owned_roots):
                 raise ValueError(f"卸载路径不属于 skillcheck 安装目录：{path}")
-

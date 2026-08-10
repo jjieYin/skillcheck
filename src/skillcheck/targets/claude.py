@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 from skillcheck.targets._mcp import McpTarget
 from skillcheck.targets.base import AgentId

@@ -9,8 +9,8 @@ from pathlib import Path
 import numpy as np
 
 from skillcheck.core.decisions import RuleDecision, RuleDecisionEngine
-from skillcheck.models import AuditGroup, CandidateMatch, Finding, Provider, Severity, SkillRecord
 from skillcheck.core.retrieval import cosine_top_k
+from skillcheck.models import AuditGroup, CandidateMatch, Finding, Provider, Severity, SkillRecord
 
 
 @dataclass(frozen=True)

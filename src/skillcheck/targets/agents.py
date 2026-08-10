@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import os
 import shutil
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 from skillcheck.targets.base import AgentId
-
 
 AGENT_ORDER: tuple[AgentId, ...] = (
     AgentId.CODEX,

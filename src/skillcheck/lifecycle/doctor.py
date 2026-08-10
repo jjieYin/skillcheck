@@ -154,7 +154,7 @@ class Doctor:
                 payload = yaml.safe_load(Path(config_path).read_text(encoding="utf-8"))
                 if payload is not None and not isinstance(payload, dict):
                     raise ValueError("root")
-            except Exception:
+            except Exception:  # noqa: BLE001 - diagnostics must degrade to an explicit check result
                 return DoctorCheck(
                     code="config.parse",
                     status=CheckStatus.ERROR,
@@ -227,7 +227,7 @@ class Doctor:
         try:
             detections = registry.detect_all()
             detected = [item for item in detections if item.cli_path or item.config_path]
-        except Exception:
+        except Exception:  # noqa: BLE001 - an unavailable Agent must not abort doctor
             detected = []
         return DoctorCheck(
             code="targets.detect",
@@ -254,7 +254,7 @@ class Doctor:
                 from skillcheck.mcp.server import TOOL_NAMES
 
                 explicit = len(TOOL_NAMES) == 3
-            except Exception:
+            except Exception:  # noqa: BLE001 - MCP is an optional diagnostic
                 explicit = False
         return DoctorCheck(
             code="mcp.handshake",

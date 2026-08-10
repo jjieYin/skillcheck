@@ -3,8 +3,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from skillcheck.models import Finding, Severity, SkillRecord
 from skillcheck.core.parser import parse_frontmatter
+from skillcheck.models import Finding, Severity, SkillRecord
 
 
 class BuiltinValidator:

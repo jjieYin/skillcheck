@@ -6,7 +6,6 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 ReviewMode = Literal["ask", "none", "codex", "claude"]
 
 
@@ -123,7 +122,7 @@ class AppConfig(BaseModel):
         self.scan.extra_paths = value
 
     @classmethod
-    def default(cls, home: Path | str | None = None) -> "AppConfig":
+    def default(cls, home: Path | str | None = None) -> AppConfig:
         user_home = Path(home).expanduser() if home is not None else Path.home()
         state = app_home(home)
         paths = unique_paths([

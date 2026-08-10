@@ -42,10 +42,11 @@ class AddPipeline:
         self.planner = planner
         self.executor = executor
         self.review_pipeline = review_pipeline
+        self.config: Any = None
 
     def prepare(self, request: AddRequest) -> PreparedAdd:
         use_direct_llm = request.review not in {"none", "codex", "claude"}
-        check_kwargs = {"use_llm": use_direct_llm}
+        check_kwargs: dict[str, bool | int] = {"use_llm": use_direct_llm}
         if request.top_k is not None:
             check_kwargs["top_k"] = request.top_k
         result = self.checker.check(request.source, **check_kwargs)

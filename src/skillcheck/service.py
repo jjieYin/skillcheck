@@ -50,7 +50,7 @@ class CheckResult:
 @dataclass(frozen=True)
 class AuditServiceResult:
     report: LibraryAuditReport
-    paths: ReportPaths
+    paths: ReportPaths | None
     audit: AuditResult
 
 
@@ -107,6 +107,7 @@ class SkillCheckService:
         provider=None,
         use_llm: bool = True,
         refresh: bool = False,
+        write_report: bool = True,
     ) -> AuditServiceResult:
         if refresh:
             self.scan()
@@ -161,7 +162,7 @@ class SkillCheckService:
             capabilities=capabilities,
             llm_used=llm_used,
         )
-        paths = self.report_writer.write(report)
+        paths = self.report_writer.write(report) if write_report else None
         return AuditServiceResult(report=report, paths=paths, audit=audit)
 
     def check(

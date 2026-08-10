@@ -11,7 +11,6 @@ from skillcheck.mcp.instructions import MCP_INSTRUCTIONS
 from skillcheck.mcp.repositories import FileRepositories
 from skillcheck.mcp.tools import SkillcheckQueries
 
-
 TOOL_NAMES = {"skillcheck_summary", "skillcheck_groups", "skillcheck_report"}
 
 

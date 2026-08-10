@@ -5,10 +5,30 @@ Codex、Claude Code、Cursor、Agents 等常见目录，再用确定性规则和
 发现重复、边界重叠、环境变体、权限冲突和安全问题。审计只生成建议，不会自动
 删除或改写现有 Skill。
 
+## 快速开始
+
+Windows x64 普通用户无需 Python，一行安装：
+
+```powershell
+irm https://raw.githubusercontent.com/jjieYin/skillcheck/main/install.ps1 | iex
+```
+
+安装后直接运行：
+
+```powershell
+skillcheck
+skillcheck scan
+skillcheck add SOURCE
+```
+
+扫描默认只做本地检查并生成 Markdown/JSON 报告；只有显式指定 `--review codex` 或
+`--review claude` 才会调用 Agent。完整使用说明见
+[`docs/getting-started.md`](docs/getting-started.md)、[`docs/agent-setup.md`](docs/agent-setup.md)
+和 [`docs/review-and-privacy.md`](docs/review-and-privacy.md)。
+
 ## 安装
 
-当前 v0.2 仍提供 Python 开发安装方式；后续发行版会补充自包含安装包。
-开发环境（Windows PowerShell 和 POSIX shell 均适用）：
+普通用户优先使用上面的自包含安装器。开发者安装方式（Windows PowerShell 和 POSIX shell 均适用）：
 
 ```powershell
 python -m pip install -e ".[dev]"

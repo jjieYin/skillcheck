@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 MIGRATIONS: dict[int, tuple[str, ...]] = {
     2: (
         """

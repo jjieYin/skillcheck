@@ -6,8 +6,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from skillcheck.config import AppConfig
-from skillcheck.models import Provider, Scope, SkillRecord
 from skillcheck.core.parser import SkillParseError, parse_skill
+from skillcheck.models import Provider, Scope, SkillRecord
 
 
 @dataclass(frozen=True)

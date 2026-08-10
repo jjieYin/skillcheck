@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from skillcheck.targets.agents import AGENT_ORDER, EmptyTarget, normalize_agent
 from skillcheck.targets.base import AgentId, AgentTarget, ConfigChange, DetectionResult
@@ -35,16 +36,22 @@ class SetupResult:
 class TargetRegistry:
     """Register and detect targets in a stable user-facing order."""
 
-    def __init__(self, targets: Mapping[AgentId | str, AgentTarget] | Iterable[AgentTarget] | None = None) -> None:
+    def __init__(
+        self,
+        targets: Mapping[AgentId, AgentTarget]
+        | Mapping[str, AgentTarget]
+        | Iterable[AgentTarget]
+        | None = None,
+    ) -> None:
         self._targets: dict[AgentId, AgentTarget] = {}
         if targets is None:
-            targets = [EmptyTarget(agent) for agent in AGENT_ORDER]
+            targets = cast(Iterable[AgentTarget], [EmptyTarget(agent) for agent in AGENT_ORDER])
         if isinstance(targets, Mapping):
             for agent, target in targets.items():
                 self.register(agent, target)
         else:
             for target in targets:
-                self.register(getattr(target, "agent"), target)
+                self.register(target.agent, target)
 
     def register(self, agent: AgentId | str, target: AgentTarget) -> None:
         normalized = normalize_agent(agent)

@@ -7,7 +7,6 @@ from typer.testing import CliRunner
 from skillcheck.app.main import app
 from skillcheck.lifecycle.doctor import CheckStatus, DoctorCheck, DoctorReport
 
-
 runner = CliRunner()
 
 

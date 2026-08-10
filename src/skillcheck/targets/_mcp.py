@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, Literal
+from typing import Literal
 
 from skillcheck.targets.agents import resolve_executable
 from skillcheck.targets.base import AgentId, ConfigChange, DetectionResult
 from skillcheck.targets.config_io import (
-    ConfigFormatError,
     ConfigWriteResult,
     atomic_replace,
-    content_hash,
     load_document,
     mcp_entry_matches,
     read_mcp_entry,
@@ -23,6 +22,7 @@ from skillcheck.targets.config_io import (
 class McpTarget:
     """Base adapter that edits exactly one ``skillcheck`` MCP entry."""
 
+    agent: AgentId
     format: Literal["json", "toml"]
     container_name: str
 
@@ -130,7 +130,7 @@ class McpTarget:
                 summary=("配置不存在，无需卸载",),
                 agent=self.agent,
             )
-        document, text, before_hash = load_document(path, self.format)
+        document, _text, before_hash = load_document(path, self.format)
         if read_mcp_entry(document, self.format, "skillcheck") is None:
             return ConfigWriteResult(
                 path=path,

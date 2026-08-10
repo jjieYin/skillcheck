@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -18,6 +19,7 @@ class ScanScope(BaseModel):
 class ScanPipeline:
     def __init__(self, context) -> None:
         self.context = context
+        self.config: Any = None
 
     def run(self, scope: ScanScope, review: ReviewMode):
         run = self.context.runs.start(scope)

@@ -4,7 +4,6 @@ import sys
 
 import typer
 
-
 MENU_ITEMS = {
     "1": "扫描现有 Skills",
     "2": "检查并安装新 Skill",

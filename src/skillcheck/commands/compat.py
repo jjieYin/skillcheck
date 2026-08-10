@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import typer
 
@@ -31,13 +32,13 @@ def _initialise(config_path: Path | None, home: Path | None) -> Path:
     return config_path or loaded.index_path.parent / "config.yaml"
 
 
-def _path_value(value) -> Path:
+def _path_value(value: str | Path | None) -> Path:
     return Path(value).expanduser() if value else Path.cwd()
 
 
-def _json_from_report(report_paths) -> str:
+def _json_from_report(report_paths: Any) -> str:
     path = getattr(report_paths, "json_path", None) or getattr(report_paths, "json", None)
-    return Path(path).read_text(encoding="utf-8")
+    return Path(str(path)).read_text(encoding="utf-8")
 
 
 def _scan_exit_code(payload: dict) -> int:
@@ -201,7 +202,7 @@ def register(app: typer.Typer) -> None:
 def _decision_exit_code(decision: Decision | object, *, strict: bool = False) -> int:
     raw = getattr(decision, "value", decision)
     try:
-        normalized = Decision(raw)
+        normalized = Decision(str(raw))
     except (TypeError, ValueError):
         normalized = Decision.MANUAL_REVIEW
     if strict and normalized not in {Decision.PASS, Decision.APPROVE}:

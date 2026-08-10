@@ -45,7 +45,7 @@ def build_doctor_context(config_path: Path | None):
 
             payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
             config = AppConfig.model_validate(payload)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - diagnostics must report malformed configs
             return SimpleNamespace(
                 config_path=path,
                 config_error=str(type(exc).__name__),

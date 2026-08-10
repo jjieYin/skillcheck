@@ -3,7 +3,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from skillcheck.models.audit import CandidateMatch, Finding
+from skillcheck.models.audit import CandidateMatch, Finding, LibraryAuditReport
 from skillcheck.models.common import Decision
 from skillcheck.models.review import AgentReview
 

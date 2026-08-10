@@ -42,8 +42,8 @@ class SetupPipeline:
                 if result.changed:
                     try:
                         self.registry.get(result.agent).uninstall(preview.scope)
-                    except Exception:
-                        pass
+                    except Exception as rollback_error:  # noqa: BLE001 - preserve original setup error
+                        del rollback_error
             raise
         validations = [
             bool(self.registry.get(change.agent).validate(preview.scope))
@@ -51,4 +51,3 @@ class SetupPipeline:
         ]
         self.config_store.record_targets(preview.scope, results, validations)
         return self.registry.setup_result(results, validations, scope=preview.scope)
-

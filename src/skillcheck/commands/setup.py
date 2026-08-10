@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast
 
 import typer
 
@@ -12,7 +12,7 @@ from skillcheck.config import app_home, load_or_create_config, save_config
 from skillcheck.config.models import AppConfig
 from skillcheck.pipelines.setup_pipeline import SetupPipeline
 from skillcheck.targets.agents import EmptyTarget
-from skillcheck.targets.base import AgentId
+from skillcheck.targets.base import AgentId, AgentTarget
 from skillcheck.targets.claude import ClaudeTarget
 from skillcheck.targets.codex import CodexTarget
 from skillcheck.targets.cursor import CursorTarget
@@ -28,7 +28,7 @@ class FileTargetConfigStore:
         self.config.targets.configured = [
             result.agent.value for result in results if getattr(result, "agent", None) is not None
         ]
-        self.config.targets.scope = scope
+        self.config.targets.scope = cast(Literal["global", "project"], scope)
         self.config.targets.last_validated = bool(validations) and all(validations)
         save_config(self.path, self.config)
 
@@ -43,8 +43,7 @@ def build_setup_pipeline(config_path: Path | None) -> SetupPipeline:
     loaded = load_or_create_config(config_path)
     home = Path.home()
     project = Path.cwd()
-    registry = TargetRegistry(
-        {
+    targets: dict[AgentId, AgentTarget] = {
             AgentId.CODEX: CodexTarget(
                 global_config=home / ".codex" / "config.toml",
                 project_config=project / ".codex" / "config.toml",
@@ -60,9 +59,9 @@ def build_setup_pipeline(config_path: Path | None) -> SetupPipeline:
                 project_config=project / ".cursor" / "mcp.json",
                 skill_paths=loaded.scan_paths + loaded.extra_paths,
             ),
-            AgentId.AGENTS: EmptyTarget(AgentId.AGENTS),
-        }
-    )
+        AgentId.AGENTS: cast(AgentTarget, EmptyTarget(AgentId.AGENTS)),
+    }
+    registry = TargetRegistry(targets)
     return SetupPipeline(registry, FileTargetConfigStore(_config_path(config_path), loaded))
 
 

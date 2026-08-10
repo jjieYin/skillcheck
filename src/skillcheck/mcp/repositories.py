@@ -12,7 +12,7 @@ def _read_report(path: Path) -> dict:
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise FileNotFoundError(f"报告不可读：{path}") from exc
     if not isinstance(payload, dict):
-        raise ValueError(f"报告根节点不是对象：{path}")
+        raise TypeError(f"报告根节点不是对象：{path}")
     return payload
 
 
@@ -88,4 +88,3 @@ class FileRepositories:
     def __init__(self, reports_path: Path) -> None:
         self.reports = FileReportRepository(reports_path)
         self.groups = FileGroupRepository(self.reports)
-
