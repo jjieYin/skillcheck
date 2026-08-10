@@ -16,6 +16,7 @@ dependencies = [
   "numpy>=2,<3",
   "httpx>=0.27,<1",
   "openai>=1.40,<3",
+  "tomlkit>=0.13,<1",
 ]
 
 [project.optional-dependencies]
