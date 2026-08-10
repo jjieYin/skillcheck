@@ -17,6 +17,7 @@ dependencies = [
   "httpx>=0.27,<1",
   "openai>=1.40,<3",
   "tomlkit>=0.13,<1",
+  "mcp>=1,<2",
 ]
 
 [project.optional-dependencies]

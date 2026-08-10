@@ -7,6 +7,7 @@ from skillcheck.commands.add import register as register_add
 from skillcheck.commands.compat import register as register_compat
 from skillcheck.commands.report import register as register_report
 from skillcheck.commands.scan import register as register_scan
+from skillcheck.commands.serve import register as register_serve
 from skillcheck.commands.setup import register as register_setup
 
 
@@ -34,4 +35,5 @@ register_scan(app)
 register_report(app)
 register_add(app)
 register_setup(app)
+register_serve(app)
 register_compat(app)
