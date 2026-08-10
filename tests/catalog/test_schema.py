@@ -107,3 +107,24 @@ def test_existing_v4_catalog_with_invalid_fts_definition_is_rejected(tmp_path, f
 
     with pytest.raises(IncompatibleCatalogError, match="reinitialize"):
         database.initialize()
+
+
+@pytest.mark.parametrize(
+    ("index_name", "replacement"),
+    [
+        ("idx_evidence_group", None),
+        ("idx_skills_root_path", "CREATE INDEX idx_skills_root_path ON skills(skill_id)"),
+    ],
+)
+def test_existing_v4_catalog_with_missing_or_altered_index_is_rejected(
+    tmp_path, index_name, replacement
+) -> None:
+    database = CatalogDatabase(tmp_path / "index.db")
+    database.initialize()
+    with sqlite3.connect(database.path) as connection:
+        connection.execute(f"DROP INDEX {index_name}")
+        if replacement:
+            connection.execute(replacement)
+
+    with pytest.raises(IncompatibleCatalogError, match="reinitialize"):
+        database.initialize()

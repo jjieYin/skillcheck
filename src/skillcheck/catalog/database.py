@@ -105,9 +105,9 @@ class CatalogDatabase:
     def _has_expected_structure(cls, connection: sqlite3.Connection) -> bool:
         actual = cls._schema_objects(connection)
         expected = cls._canonical_schema_objects()
-        for table in cls._expected_tables():
-            actual_object = actual.get(table)
-            expected_object = expected.get(table)
+        for object_name in cls._expected_schema_objects():
+            actual_object = actual.get(object_name)
+            expected_object = expected.get(object_name)
             if actual_object is None or expected_object is None:
                 return False
             if actual_object["type"] != expected_object["type"]:
@@ -135,11 +135,11 @@ class CatalogDatabase:
 
     @classmethod
     def _schema_objects(cls, connection: sqlite3.Connection) -> dict[str, sqlite3.Row]:
-        tables = tuple(cls._expected_tables())
-        placeholders = ",".join("?" for _ in tables)
+        object_names = tuple(cls._expected_schema_objects())
+        placeholders = ",".join("?" for _ in object_names)
         rows = connection.execute(
             "SELECT name, type, sql FROM sqlite_master WHERE name IN " f"({placeholders})",
-            tables,
+            object_names,
         ).fetchall()
         return {row["name"]: row for row in rows}
 
@@ -161,6 +161,15 @@ class CatalogDatabase:
             "source_preflights",
             "install_plans",
             "skill_fts",
+        }
+
+    @classmethod
+    def _expected_schema_objects(cls) -> set[str]:
+        return cls._expected_tables() | {
+            "idx_skills_root_path",
+            "idx_snapshots_skill",
+            "idx_group_members_snapshot",
+            "idx_evidence_group",
         }
 
     @staticmethod
