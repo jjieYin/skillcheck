@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from skillcheck.audit import LibraryAuditor
+from skillcheck.models import Finding, Severity
 from tests.helpers import skill_record
 
 
@@ -50,3 +51,22 @@ def test_path_filter_and_group_order_are_stable() -> None:
     second = LibraryAuditor(top_k=5).audit(skills, vectors, findings=[], root_path="/skills")
     assert first.groups == second.groups
     assert first.compared_pairs == [("a", "z")]
+
+
+def test_single_security_finding_is_a_security_issue() -> None:
+    result = LibraryAuditor().audit(
+        [skill_record(skill_id="unsafe", content_hash="sha256:unsafe")],
+        {},
+        findings={
+            "unsafe": [
+                Finding(
+                    rule_id="SEC002",
+                    severity=Severity.HIGH,
+                    message="Skill contains a hardcoded credential.",
+                    remediation="Remove the credential.",
+                )
+            ]
+        },
+    )
+
+    assert result.groups[0].relation == "SECURITY_ISSUE"

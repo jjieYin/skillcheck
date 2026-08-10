@@ -249,10 +249,11 @@ def _quality_groups(
         related = findings.get(skill.skill_id, [])
         if not related or skill.skill_id in covered:
             continue
+        relation = "SECURITY_ISSUE" if any(_is_security_finding(item) for item in related) else "QUALITY_ISSUE"
         groups.append(
             AuditGroup(
-                group_id=_group_id("QUALITY_ISSUE", [skill.skill_id]),
-                relation="QUALITY_ISSUE",
+                group_id=_group_id(relation, [skill.skill_id]),
+                relation=relation,
                 member_skill_ids=[skill.skill_id],
                 confidence="medium",
                 same_points=[finding.message for finding in related],
@@ -260,6 +261,15 @@ def _quality_groups(
             )
         )
     return groups
+
+
+def _is_security_finding(finding: Finding) -> bool:
+    if finding.rule_id.upper().startswith("SEC"):
+        return True
+    if finding.severity not in {Severity.HIGH, Severity.CRITICAL}:
+        return False
+    text = f"{finding.message} {finding.remediation}".casefold()
+    return any(term in text for term in ("credential", "secret", "token", "api key", "password"))
 
 
 def _group_id(relation: str, member_ids: list[str]) -> str:

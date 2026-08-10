@@ -90,13 +90,37 @@ def test_source_analysis_binds_revision_to_source_hash(analyzer: GovernanceAnaly
     assert result.summary.skills_considered == 1
 
 
+def test_source_analysis_finds_overlap_with_catalog(analyzer: GovernanceAnalyzer, repository, tmp_path) -> None:
+    repository.upsert_snapshot(
+        _snapshot(
+            "catalog-skill",
+            "sha256:catalog",
+            body="Validate API schemas and report compatible request fields.",
+        ).model_copy(update={"description": "Validate API schemas."})
+    )
+    source = tmp_path / "staged-source"
+    skill = source / "incoming"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: Incoming\ndescription: Validate API schemas.\n---\n"
+        "Validate API schemas and report compatible request fields.\n",
+        encoding="utf-8",
+    )
+
+    result = analyzer.analyze_source(source, limit=20)
+
+    overlap = next(group for group in result.groups if group.relation is Relation.HIGH_OVERLAP_CANDIDATE)
+    assert "catalog-skill" in overlap.member_skill_ids
+    assert len(overlap.member_skill_ids) == 2
+
+
 def test_analyze_dispatches_library_mode(analyzer: GovernanceAnalyzer) -> None:
     result = analyzer.analyze(AnalyzeMode.LIBRARY, limit=20)
 
     assert result.mode is AnalyzeMode.LIBRARY
 
 
-@pytest.mark.parametrize("limit", [0, 101])
+@pytest.mark.parametrize("limit", [0, 101, 1.5, "20", True])
 def test_analyze_rejects_an_unbounded_limit(analyzer: GovernanceAnalyzer, limit: int) -> None:
     with pytest.raises(ValueError, match="limit"):
         analyzer.analyze_library(scope="all", limit=limit)
