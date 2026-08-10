@@ -10,6 +10,7 @@ from skillcheck.commands.report import register as register_report
 from skillcheck.commands.scan import register as register_scan
 from skillcheck.commands.serve import register as register_serve
 from skillcheck.commands.setup import register as register_setup
+from skillcheck.commands.upgrade import register as register_upgrade
 
 
 app = typer.Typer(no_args_is_help=False, invoke_without_command=True)
@@ -38,6 +39,7 @@ register_add(app)
 register_setup(app)
 register_serve(app)
 register_doctor(app)
+register_upgrade(app)
 register_compat(app)
 
 
