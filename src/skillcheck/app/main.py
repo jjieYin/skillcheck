@@ -11,6 +11,7 @@ from skillcheck.commands.scan import register as register_scan
 from skillcheck.commands.serve import register as register_serve
 from skillcheck.commands.setup import register as register_setup
 from skillcheck.commands.upgrade import register as register_upgrade
+from skillcheck.commands.uninstall import register as register_uninstall
 
 
 app = typer.Typer(no_args_is_help=False, invoke_without_command=True)
@@ -40,6 +41,7 @@ register_setup(app)
 register_serve(app)
 register_doctor(app)
 register_upgrade(app)
+register_uninstall(app)
 register_compat(app)
 
 

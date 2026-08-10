@@ -11,6 +11,7 @@ MENU_ITEMS = {
     "3": "查看最近报告",
     "4": "配置 Agent",
     "5": "检查运行环境",
+    "6": "卸载 skillcheck（保留数据）",
     "0": "退出",
 }
 
@@ -36,5 +37,8 @@ def run_menu() -> None:
             return
         if action == "4":
             typer.echo("请运行 skillcheck setup，进入 Agent 自动检测和配置向导。")
+            continue
+        if action == "6":
+            typer.echo("请运行 skillcheck uninstall，预览精确卸载路径。")
             continue
         typer.echo(f"功能“{MENU_ITEMS.get(action, action)}”将在对应命令中执行。")
