@@ -114,6 +114,8 @@ def _stage_github(source: str, staging_parent: Path | str | None) -> StagedSourc
         subprocess.run(
             [
                 "git",
+                "-c",
+                "http.followRedirects=false",
                 "clone",
                 "--depth",
                 "1",
@@ -159,11 +161,19 @@ def _safe_member_path(name: str) -> str | None:
 
 def _safe_target(root: Path, relative: str) -> Path:
     target = (root / Path(relative)).resolve()
+    return ensure_within(root, target)
+
+
+def ensure_within(root: Path, candidate: Path) -> Path:
+    """Resolve a path and reject every candidate outside ``root``."""
+
+    resolved_root = root.resolve()
+    resolved_candidate = candidate.resolve()
     try:
-        target.relative_to(root.resolve())
+        resolved_candidate.relative_to(resolved_root)
     except ValueError as exc:
-        raise SourceSafetyError(f"ZIP path traversal is not allowed: {relative}") from exc
-    return target
+        raise SourceSafetyError(f"路径越过暂存区：{candidate}") from exc
+    return resolved_candidate
 
 
 def _is_zip_symlink(member) -> bool:
