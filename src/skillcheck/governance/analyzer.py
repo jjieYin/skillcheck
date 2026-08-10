@@ -101,7 +101,13 @@ class GovernanceAnalyzer:
             source_snapshots = self._source_snapshots(root, source_hash)
             snapshots = [*source_snapshots, *self.catalog.list_current_skills()]
             return self._analyze(
-                AnalyzeMode.SOURCE, snapshots, source_hash, False, limit, lexical_fallback=True
+                AnalyzeMode.SOURCE,
+                snapshots,
+                source_hash,
+                False,
+                limit,
+                lexical_fallback=True,
+                source_skill_ids={item.skill_id for item in source_snapshots},
             )
 
     def evidence(
@@ -109,10 +115,11 @@ class GovernanceAnalyzer:
     ) -> EvidencePage:
         if page < 1:
             raise ValueError("page must be at least 1")
+        pending_before = self._pending_paths()
         self._sync_and_stale([])
         revision, members = self.repository.evidence_members(run_id, group_id)
         paths = self._member_paths(members)
-        stale = self.runtime.is_stale(paths) if self.runtime is not None else False
+        stale = any(_paths_overlap(pending, member) for pending in pending_before for member in paths)
         page_count = max(1, math.ceil(len(members) / _PAGE_SIZE))
         if page > page_count:
             raise ValueError("page exceeds available evidence")
@@ -138,8 +145,9 @@ class GovernanceAnalyzer:
         limit: int,
         *,
         lexical_fallback: bool = False,
+        source_skill_ids: set[str] | None = None,
     ) -> AnalyzeResult:
-        selected = sorted(snapshots, key=lambda item: item.skill_id)[:limit]
+        selected = self._select_snapshots(snapshots, limit, source_skill_ids)
         records = [self._record(item) for item in selected]
         findings = {item.skill_id: _snapshot_findings(item) for item in selected}
         vectors = self._vectors_for(selected, lexical_fallback=lexical_fallback)
@@ -221,6 +229,24 @@ class GovernanceAnalyzer:
         return vectors
 
     @staticmethod
+    def _select_snapshots(
+        snapshots: list[SkillSnapshot], limit: int, source_skill_ids: set[str] | None
+    ) -> list[SkillSnapshot]:
+        ordered = sorted(snapshots, key=lambda item: item.skill_id)
+        if not source_skill_ids:
+            return ordered[:limit]
+        sources = [item for item in ordered if item.skill_id in source_skill_ids][:limit]
+        remaining = limit - len(sources)
+        if remaining <= 0:
+            return sources
+        source_vectors = [_lexical_vector(item) for item in sources]
+        catalog = [item for item in ordered if item.skill_id not in source_skill_ids]
+        catalog.sort(
+            key=lambda item: (-_max_similarity(_lexical_vector(item), source_vectors), item.skill_id)
+        )
+        return [*sources, *catalog[:remaining]]
+
+    @staticmethod
     def _record(snapshot: SkillSnapshot) -> SkillRecord:
         return SkillRecord(
             skill_id=snapshot.skill_id,
@@ -279,6 +305,11 @@ class GovernanceAnalyzer:
         stale = self.runtime.is_stale(paths) if paths else False
         self.runtime.before_query()
         return stale
+
+    def _pending_paths(self) -> set[Path]:
+        if self.runtime is None:
+            return set()
+        return set(self.runtime.pending_paths())
 
     def _revision(self) -> str:
         if self.runtime is not None:
@@ -378,6 +409,23 @@ def _lexical_vector(snapshot: SkillSnapshot) -> np.ndarray:
         index = int.from_bytes(hashlib.sha256(token.encode("utf-8")).digest()[:4], "big") % _LEXICAL_DIMENSIONS
         vector[index] += 1.0
     return vector
+
+
+def _max_similarity(vector: np.ndarray, candidates: list[np.ndarray]) -> float:
+    norm = float(np.linalg.norm(vector))
+    if norm == 0 or not candidates:
+        return 0.0
+    return max(
+        (float(np.dot(vector, candidate) / (norm * candidate_norm)) if candidate_norm else 0.0)
+        for candidate in candidates
+        for candidate_norm in [float(np.linalg.norm(candidate))]
+    )
+
+
+def _paths_overlap(first: Path, second: Path) -> bool:
+    first_path = Path(first).expanduser().resolve(strict=False)
+    second_path = Path(second).expanduser().resolve(strict=False)
+    return first_path == second_path or first_path in second_path.parents or second_path in first_path.parents
 
 
 def _shared_capabilities(members: list[SkillSnapshot]) -> list[str]:

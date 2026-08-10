@@ -114,6 +114,39 @@ def test_source_analysis_finds_overlap_with_catalog(analyzer: GovernanceAnalyzer
     assert len(overlap.member_skill_ids) == 2
 
 
+def test_source_analysis_prioritizes_incoming_skills_when_limit_is_small(
+    analyzer: GovernanceAnalyzer, repository, tmp_path
+) -> None:
+    for index in range(20):
+        repository.upsert_snapshot(
+            _snapshot(
+                f"catalog-{index:02d}",
+                f"sha256:catalog-{index}",
+                body=f"Unrelated catalog skill {index}.",
+            ).model_copy(update={"description": "Unrelated catalog skill."})
+        )
+    repository.upsert_snapshot(
+        _snapshot(
+            "catalog-match",
+            "sha256:catalog-match",
+            body="Validate API schemas and report compatible request fields.",
+        ).model_copy(update={"description": "Validate API schemas."})
+    )
+    source = tmp_path / "staged-source"
+    skill = source / "incoming"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: Incoming\ndescription: Validate API schemas.\n---\n"
+        "Validate API schemas and report compatible request fields.\n",
+        encoding="utf-8",
+    )
+
+    result = analyzer.analyze_source(source, limit=2)
+
+    assert result.summary.skills_considered == 2
+    assert any("catalog-match" in group.member_skill_ids for group in result.groups)
+
+
 def test_analyze_dispatches_library_mode(analyzer: GovernanceAnalyzer) -> None:
     result = analyzer.analyze(AnalyzeMode.LIBRARY, limit=20)
 

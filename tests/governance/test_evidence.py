@@ -6,7 +6,9 @@ from pathlib import Path
 from skillcheck.catalog.database import CatalogDatabase
 from skillcheck.catalog.models import LibraryRoot, RootScope, SkillSnapshot
 from skillcheck.catalog.repository import CatalogRepository
+from skillcheck.config.models import AppConfig
 from skillcheck.governance import GovernanceAnalyzer
+from skillcheck.mcp.runtime import McpRuntime
 
 
 class PendingRuntime:
@@ -21,6 +23,9 @@ class PendingRuntime:
     def before_query(self) -> None:
         self.before_query_calls += 1
         self.events.append("before_query")
+
+    def pending_paths(self) -> set[Path]:
+        return {self.pending_path}
 
 
 def _snapshot(index: int) -> SkillSnapshot:
@@ -96,6 +101,35 @@ def test_evidence_syncs_runtime_before_reading_members(tmp_path, monkeypatch) ->
     analyzer.evidence(analyzed.run_id, analyzed.groups[0].group_id)
 
     assert runtime.events[:2] == ["before_query", "evidence_members"]
+
+
+def test_evidence_stays_stale_when_real_runtime_consumes_pending_paths(tmp_path) -> None:
+    database = CatalogDatabase(tmp_path / "catalog.db")
+    database.initialize()
+    catalog = CatalogRepository(database)
+    root = tmp_path / "skills"
+    catalog.upsert_root(
+        LibraryRoot(root_id="root-1", path=root, provider="codex", scope=RootScope.PROJECT)
+    )
+    for index in range(2):
+        snapshot = _snapshot(index)
+        path = root / snapshot.relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(snapshot.body, encoding="utf-8")
+        catalog.upsert_snapshot(snapshot)
+    config = AppConfig.default(home=tmp_path / "home")
+    config.index_path = database.path
+    config.catalog.initialized = True
+    runtime = McpRuntime(config, repository=catalog, project_path=tmp_path)
+    analyzer = GovernanceAnalyzer(catalog, runtime=runtime)
+    analyzed = analyzer.analyze_library(limit=20)
+    pending = root / "skill-00" / "SKILL.md"
+    runtime._on_changes({pending})
+
+    evidence = analyzer.evidence(analyzed.run_id, analyzed.groups[0].group_id)
+
+    assert evidence.stale is True
+    assert runtime.pending_paths() == set()
 
 
 def test_evidence_rejects_a_group_from_another_run(tmp_path) -> None:

@@ -119,9 +119,13 @@ class McpRuntime:
 
     def is_stale(self, paths: list[Path | str]) -> bool:
         evidence_paths = [self._normalized_path(path) for path in paths]
-        with self._pending_lock:
-            pending = tuple(self.pending)
+        pending = self.pending_paths()
         return any(self._overlaps(change, evidence) for change in pending for evidence in evidence_paths)
+
+    def pending_paths(self) -> set[Path]:
+        """Return a snapshot of pending normalized paths without consuming them."""
+        with self._pending_lock:
+            return set(self.pending)
 
     def status(self) -> RuntimeStatus:
         warning = self.watcher.warning if self.watcher is not None else None
