@@ -5,20 +5,150 @@ on:
     tags: ["v*"]
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  build:
+    name: Build ${{ matrix.platform }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.os }}
     permissions:
-      contents: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            arch: x64
+            os: windows-latest
+          - platform: linux
+            arch: x64
+            os: ubuntu-22.04
+          - platform: macos
+            arch: x64
+            os: macos-13
+          - platform: macos
+            arch: arm64
+            os: macos-14
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: python -m pip install -e ".[dev]"
-      - run: python -m pytest tests/release -q
-      - name: Build release metadata
-        run: python scripts/render_manifest.py README.md --version "${GITHUB_REF_NAME#v}" --output release
+
+      - name: Install build dependencies
+        run: python -m pip install -e ".[dev]"
+
+      - name: Build native release asset
+        shell: bash
+        env:
+          TARGET_PLATFORM: ${{ matrix.platform }}
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          python scripts/build_release.py \
+            --version "$version" \
+            --platform "$TARGET_PLATFORM" \
+            --arch "$TARGET_ARCH"
+
+          if [[ "$TARGET_PLATFORM" == "windows" ]]; then
+            executable="dist/skillcheck-${version}-${TARGET_PLATFORM}-${TARGET_ARCH}/skillcheck.exe"
+          else
+            executable="dist/skillcheck-${version}-${TARGET_PLATFORM}-${TARGET_ARCH}/skillcheck"
+          fi
+
+          "$executable" version
+          set +e
+          "$executable" doctor --json
+          doctor_code=$?
+          set -e
+          if (( doctor_code > 1 )); then
+            exit "$doctor_code"
+          fi
+
+      - name: Stage asset and manifest
+        shell: bash
+        env:
+          TARGET_PLATFORM: ${{ matrix.platform }}
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifact
+          python - <<'PY'
+          import json
+          import os
+          import shutil
+          from pathlib import Path
+
+          platform = os.environ["TARGET_PLATFORM"]
+          arch = os.environ["TARGET_ARCH"]
+          release_dir = Path("dist/release") / f"{platform}-{arch}"
+          manifest_path = release_dir / "manifest.json"
+          payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+          asset = Path("dist") / payload["asset_name"]
+          if not asset.is_file():
+              raise SystemExit(f"missing release asset: {asset}")
+          shutil.copy2(asset, Path("artifact") / asset.name)
+          shutil.copy2(manifest_path, Path("artifact/manifest.json"))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.platform }}-${{ matrix.arch }}
+          path: artifact
+          if-no-files-found: error
+
+  publish:
+    name: Publish Release
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Validate and assemble release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf release-assets
+          mkdir -p release-assets
+          : > release-assets/SHA256SUMS
+          found=0
+
+          for target_dir in release-artifacts/*; do
+            [[ -d "$target_dir" ]] || continue
+            manifest="$target_dir/manifest.json"
+            test -f "$manifest"
+            asset_name="$(jq -r '.asset_name' "$manifest")"
+            platform="$(jq -r '.platform' "$manifest")"
+            arch="$(jq -r '.architecture' "$manifest")"
+            asset="$target_dir/$asset_name"
+            test -f "$asset"
+
+            expected="$(jq -r '.sha256' "$manifest")"
+            actual="$(sha256sum "$asset" | awk '{print $1}')"
+            test "$expected" = "$actual"
+
+            cp "$asset" release-assets/
+            if [[ "$platform" == "windows" && "$arch" == "x64" ]]; then
+              cp "$manifest" release-assets/manifest.json
+            else
+              cp "$manifest" "release-assets/manifest-${platform}-${arch}.json"
+            fi
+            printf '%s  %s\n' "$actual" "$asset_name" >> release-assets/SHA256SUMS
+            found=$((found + 1))
+          done
+
+          test "$found" -eq 4
+          test -f release-assets/manifest.json
+          sort -k2 release-assets/SHA256SUMS -o release-assets/SHA256SUMS
+          find release-assets -maxdepth 1 -type f -print | sort
+
       - uses: softprops/action-gh-release@v2
         with:
-          files: release/*
-
+          tag_name: ${{ github.ref_name }}
+          files: release-assets/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          make_latest: true

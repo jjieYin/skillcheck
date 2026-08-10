@@ -1,7 +1,8 @@
 # Release Checklist
 
-- [ ] 五个平台资产构建成功
+- [ ] 四个平台资产构建成功（Windows x64、Linux x64、macOS Intel、macOS Apple Silicon）
 - [ ] 所有资产 SHA-256 与 Manifest 一致
+- [ ] Windows 使用 `manifest.json`，Linux/macOS 使用各自的平台架构 Manifest
 - [ ] Windows 干净用户环境无需 Python 完成安装
 - [ ] setup 重复执行不产生重复配置
 - [ ] scan 默认不调用 Agent
@@ -11,4 +12,3 @@
 - [ ] uninstall 默认保留 Skills、索引、报告和配置
 - [ ] MCP 工具列表只包含三个只读工具
 - [ ] 总覆盖率不低于 85%，安全写入模块不低于 95%
-

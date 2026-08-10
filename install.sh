@@ -21,8 +21,9 @@ trap 'rm -rf "$TMP"' EXIT
 ASSET="skillcheck-${VERSION}-${PLATFORM}-${ARCH}.${EXT}"
 BASE="https://github.com/${REPOSITORY}/releases/download/v${VERSION}"
 DOWNLOAD_QUERY="?skillcheck_version=${VERSION}"
+MANIFEST="manifest-${PLATFORM}-${ARCH}.json"
 curl -fsSL "${BASE}/${ASSET}${DOWNLOAD_QUERY}" -o "${TMP}/${ASSET}"
-curl -fsSL "${BASE}/manifest.json${DOWNLOAD_QUERY}" -o "${TMP}/manifest.json"
+curl -fsSL "${BASE}/${MANIFEST}${DOWNLOAD_QUERY}" -o "${TMP}/manifest.json"
 
 EXPECTED="$(sed -n 's/.*"sha256": "\([a-fA-F0-9]*\)".*/\1/p' "${TMP}/manifest.json")"
 ACTUAL="$(sha256sum "${TMP}/${ASSET}" 2>/dev/null | awk '{print $1}' || shasum -a 256 "${TMP}/${ASSET}" | awk '{print $1}')"

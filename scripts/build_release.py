@@ -1,8 +1,9 @@
-"""Build the Windows one-folder executable and release metadata."""
+"""Build a native one-folder executable and release metadata."""
 
 from __future__ import annotations
 
 import argparse
+import platform as host_platform
 import shutil
 import subprocess
 import sys
@@ -31,20 +32,51 @@ class ReleaseTarget:
 def release_matrix() -> list[ReleaseTarget]:
     return [
         ReleaseTarget("windows", "x64"),
-        ReleaseTarget("windows", "arm64"),
         ReleaseTarget("linux", "x64"),
         ReleaseTarget("macos", "x64"),
         ReleaseTarget("macos", "arm64"),
     ]
 
 
+def native_target() -> tuple[str, str]:
+    platform_name = {
+        "Windows": "windows",
+        "Linux": "linux",
+        "Darwin": "macos",
+    }.get(host_platform.system())
+    architecture = {
+        "amd64": "x64",
+        "x86_64": "x64",
+        "arm64": "arm64",
+        "aarch64": "arm64",
+    }.get(host_platform.machine().casefold())
+    if platform_name is None or architecture is None:
+        raise SystemExit(
+            f"不支持的构建环境：{host_platform.system()} {host_platform.machine()}"
+        )
+    return platform_name, architecture
+
+
 def build(version: str, platform: str, arch: str) -> Path:
-    if platform.casefold() != "windows" or arch.casefold() != "x64":
-        raise SystemExit("当前只支持 windows x64")
+    target = ReleaseTarget(platform.casefold(), arch.casefold())
+    if target not in release_matrix():
+        raise SystemExit(f"不支持的发布目标：{target.platform} {target.arch}")
+    if native_target() != (target.platform, target.arch):
+        raise SystemExit(
+            "PyInstaller 必须在目标平台原生构建："
+            f"当前 {native_target()[0]} {native_target()[1]}，"
+            f"目标 {target.platform} {target.arch}"
+        )
+
     root = Path(__file__).resolve().parents[1]
     dist = root / "dist" / f"skillcheck-{version}-{platform}-{arch}"
-    work = root / "build" / "pyinstaller"
+    generated = root / "dist" / "skillcheck"
+    work = root / "build" / f"pyinstaller-{platform}-{arch}"
     dist.parent.mkdir(parents=True, exist_ok=True)
+    if generated.exists():
+        shutil.rmtree(generated)
+    if work.exists():
+        shutil.rmtree(work)
     command = [
         sys.executable,
         "-m",
@@ -58,21 +90,28 @@ def build(version: str, platform: str, arch: str) -> Path:
         str(root / "skillcheck.spec"),
     ]
     subprocess.run(command, cwd=root, check=True)
-    generated = root / "dist" / "skillcheck"
-    if generated != dist and generated.exists():
-        if dist.exists():
-            shutil.rmtree(dist)
-        generated.rename(dist)
-    target = ReleaseTarget(platform, arch)
+    if not generated.exists():
+        raise SystemExit(f"PyInstaller 未生成目录：{generated}")
+    if dist.exists():
+        shutil.rmtree(dist)
+    generated.rename(dist)
+
+    executable_name = "skillcheck.exe" if target.platform == "windows" else "skillcheck"
+    if not (dist / executable_name).is_file():
+        raise SystemExit(f"发布目录缺少可执行文件：{dist / executable_name}")
+
     asset = root / "dist" / target.asset_name(version)
     if target.suffix == ".zip":
         shutil.make_archive(str(asset.with_suffix("")), "zip", root_dir=dist)
     else:
         shutil.make_archive(str(asset.with_suffix("").with_suffix("")), "gztar", root_dir=dist)
+    release_dir = root / "dist" / "release" / f"{target.platform}-{target.arch}"
+    if release_dir.exists():
+        shutil.rmtree(release_dir)
     render(
         asset,
         version=version,
-        output=root / "dist" / "release",
+        output=release_dir,
         platform=platform,
         architecture=arch,
     )
