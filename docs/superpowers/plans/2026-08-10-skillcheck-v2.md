@@ -566,7 +566,7 @@ def test_schema_one_database_migrates_to_two(tmp_path) -> None:
 
 def test_failed_migration_rolls_back(tmp_path, monkeypatch) -> None:
     db = Database(tmp_path / "index.db")
-    monkeypatch.setattr(db, "migration_sql", lambda version: "CREATE TABLE broken(")
+    monkeypatch.setattr(db, "migration_sql", lambda version: ("CREATE TABLE broken(",))
     with pytest.raises(sqlite3.Error):
         db.migrate()
     assert "broken" not in db.table_names()
@@ -603,7 +603,8 @@ class Database:
             shutil.copy2(self.path, self.path.with_suffix(".db.pre-v2.bak"))
         with self.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            connection.executescript(self.migration_sql(2))
+            for statement in self.migration_sql(2):
+                connection.execute(statement)
             connection.execute(
                 "INSERT OR REPLACE INTO schema_meta(key, value) VALUES ('schema_version', '2')"
             )
