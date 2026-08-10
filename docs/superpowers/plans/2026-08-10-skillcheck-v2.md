@@ -836,6 +836,8 @@ Expected: FAIL，菜单和 scan 命令尚未注册。
 
 ```python
 # src/skillcheck/commands/scan.py
+import sys
+
 from pathlib import Path
 from typing import Annotated
 
@@ -851,18 +853,18 @@ def register(app: typer.Typer) -> None:
         review: Annotated[ReviewMode | None, typer.Option("--review")] = None,
         no_interactive: Annotated[bool, typer.Option("--no-interactive")] = False,
     ) -> None:
-        context = app.info.context_settings["skillcheck_context"]()
-        mode = context.config.effective_review_mode(
-            interactive=not no_interactive and context.terminal.is_interactive,
+        pipeline = build_scan_pipeline(config)
+        configuration = getattr(pipeline, "config", load_or_create_config(config))
+        mode = configuration.effective_review_mode(
+            interactive=not no_interactive and sys.stdin.isatty(),
             cli_value=review.value if review else None,
         )
-        outcome = context.scan_pipeline.run(
+        outcome = pipeline.run(
             ScanScope(paths=[str(path)] if path else []),
             ReviewMode(mode),
         )
-        context.terminal.print_scan_summary(outcome)
-        if context.terminal.should_open_report(outcome):
-            context.report_viewer.open(outcome.report.markdown)
+        typer.echo(f"扫描完成：{outcome.skill_count} 个 Skill")
+        typer.echo(f"报告：{outcome.report.markdown}")
 ```
 
 菜单只调用同一命令服务，不重复扫描逻辑。终端摘要固定显示 Skill 数、各类治理分组数、高优先级问题数、Markdown 报告绝对路径和 Agent 降级原因。
