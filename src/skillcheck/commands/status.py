@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from skillcheck.catalog.database import CatalogDatabase, IncompatibleCatalogError
 from skillcheck.catalog.repository import CatalogRepository
-from skillcheck.config import load_or_create_config
+from skillcheck.config import load_config
 
 
 class SkillcheckStatus(BaseModel):
@@ -29,18 +29,18 @@ class SkillcheckStatus(BaseModel):
 def read_status(config_path: Path | str | None = None) -> SkillcheckStatus:
     """Return state without creating or changing a catalog."""
 
-    config = load_or_create_config(config_path)
+    config = load_config(config_path)
     result = SkillcheckStatus(
         configured_agents=list(config.targets.configured),
         initialized=config.catalog.initialized,
     )
     if not config.catalog.initialized:
         return result
-    if not config.index_path.is_file():
+    if not config.catalog.database_path.is_file():
         return result.model_copy(update={"warnings": ["catalog database is missing; run skillcheck init"]})
 
     try:
-        database = CatalogDatabase(config.index_path)
+        database = CatalogDatabase(config.catalog.database_path)
         database.initialize()
         repository = CatalogRepository(database)
         with database.connect() as connection:

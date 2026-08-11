@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 
 import typer
 
-from skillcheck.config import app_home, load_config, load_or_create_config, save_config
+from skillcheck.config import app_home, load_config, save_config
 from skillcheck.pipelines.install_pipeline import InstallPipeline
 from skillcheck.targets.base import AgentId, AgentTarget
 from skillcheck.targets.claude import ClaudeTarget
@@ -22,7 +22,7 @@ SUPPORTED_TARGETS = ("codex", "claude", "cursor")
 def _build_install_pipeline(loaded) -> InstallPipeline:
     home = Path.home()
     project = Path.cwd()
-    skill_paths = loaded.scan_paths + loaded.extra_paths
+    skill_paths = loaded.catalog.roots
     targets: dict[AgentId, AgentTarget] = {
         AgentId.CODEX: CodexTarget(
             global_config=home / ".codex" / "config.toml",
@@ -45,7 +45,7 @@ def _build_install_pipeline(loaded) -> InstallPipeline:
 
 def build_install_pipeline(config_path: Path | None = None, *, create: bool = True) -> InstallPipeline:
     loaded = (
-        load_or_create_config(config_path)
+        load_config(config_path)
         if create
         else load_config(config_path, create=False)
     )

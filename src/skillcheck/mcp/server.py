@@ -7,7 +7,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from skillcheck.config import load_or_create_config
+from skillcheck.config import load_config
 from skillcheck.mcp.instructions import MCP_INSTRUCTIONS
 from skillcheck.mcp.runtime import McpRuntime
 from skillcheck.mcp.tools import SkillcheckMcpTools
@@ -20,7 +20,7 @@ TOOL_NAMES = {
 
 
 def create_server(tools: SkillcheckMcpTools) -> FastMCP:
-    """Create a server with no compatibility or direct-agent tools."""
+    """Create a server with only Agent-native governance tools."""
     server = FastMCP("skillcheck", instructions=MCP_INSTRUCTIONS, log_level="ERROR")
 
     @server.tool(name="skillcheck_analyze", description="Analyze a local Skill library or incoming source.")
@@ -49,7 +49,7 @@ def create_server(tools: SkillcheckMcpTools) -> FastMCP:
 
 
 def build_runtime(config_path: Path | str | None = None) -> McpRuntime:
-    return McpRuntime(load_or_create_config(config_path))
+    return McpRuntime(load_config(config_path))
 
 
 def run_stdio(config_path: Path | str | None = None) -> None:

@@ -58,8 +58,8 @@ def build_doctor_context(config_path: Path | None):
         config = AppConfig.default()
     return SimpleNamespace(
         config_path=path,
-        index_path=config.index_path,
-        reports_path=config.reports_path,
+        index_path=config.catalog.database_path,
+        reports_path=config.reports.directory,
         targets_detected=False,
         reviewer_available=False,
     )

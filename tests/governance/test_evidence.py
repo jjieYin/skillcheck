@@ -118,7 +118,7 @@ def test_evidence_stays_stale_when_real_runtime_consumes_pending_paths(tmp_path)
         path.write_text(snapshot.body, encoding="utf-8")
         catalog.upsert_snapshot(snapshot)
     config = AppConfig.default(home=tmp_path / "home")
-    config.index_path = database.path
+    config.catalog.database_path = database.path
     config.catalog.initialized = True
     runtime = McpRuntime(config, repository=catalog, project_path=tmp_path)
     analyzer = GovernanceAnalyzer(catalog, runtime=runtime)

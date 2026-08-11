@@ -10,7 +10,6 @@ from skillcheck.commands.install import register as register_install
 from skillcheck.commands.report import register as register_report
 from skillcheck.commands.scan import register as register_scan
 from skillcheck.commands.serve import register as register_serve
-from skillcheck.commands.setup import register as register_setup
 from skillcheck.commands.status import read_status, render_status
 from skillcheck.commands.status import register as register_status
 from skillcheck.commands.sync import register as register_sync
@@ -35,15 +34,12 @@ def main(ctx: typer.Context) -> None:
 @app.command()
 def version() -> None:
     """Print the installed skillcheck version."""
-    # Keep the old token in the output for scripts that only search for the
-    # v0.1 version string while making the active version unambiguous.
-    typer.echo(f"skillcheck {__version__} (legacy: skillcheck 0.1.0)")
+    typer.echo(f"skillcheck {__version__}")
 
 
 register_scan(app)
 register_report(app)
 register_add(app)
-register_setup(app)
 register_serve(app)
 register_doctor(app)
 register_upgrade(app)

@@ -17,7 +17,7 @@ from skillcheck.pipelines.sync_pipeline import SyncPipeline
 
 def build_sync_pipeline(config_path: Path | None) -> SyncPipeline:
     config = load_config(config_path, create=False)
-    repository = CatalogRepository(CatalogDatabase(config.index_path))
+    repository = CatalogRepository(CatalogDatabase(config.catalog.database_path))
     return SyncPipeline(config, repository, CatalogReconciler(repository, embedding=backend_from_config(config.embedding)))
 
 

@@ -5,7 +5,7 @@ from typing import Annotated
 
 import typer
 
-from skillcheck.config import load_or_create_config
+from skillcheck.config import load_config
 from skillcheck.reports import ReportWriter
 
 
@@ -17,8 +17,8 @@ def register(app: typer.Typer) -> None:
         config: Annotated[Path | None, typer.Option("--config")] = None,
         as_json: Annotated[bool, typer.Option("--json")] = False,
     ) -> None:
-        loaded = load_or_create_config(config)
-        writer = ReportWriter(loaded.reports_path)
+        loaded = load_config(config)
+        writer = ReportWriter(loaded.reports.directory)
         if action == "latest":
             paths = writer.latest()
             if paths is None:

@@ -5,7 +5,7 @@ from typing import Annotated
 
 import typer
 
-from skillcheck.config import load_or_create_config
+from skillcheck.config import load_config
 
 
 def build_add_pipeline(config: Path | None):
@@ -18,7 +18,7 @@ def _target_root(provider: str, config) -> Path:
     normalized = provider.casefold()
     if normalized not in {"codex", "claude", "agents", "cursor"}:
         raise typer.BadParameter("target 必须是 codex、claude、agents 或 cursor")
-    for configured in [*config.scan_paths, *config.extra_paths]:
+    for configured in config.catalog.roots:
         parts = {part.casefold() for part in Path(configured).parts}
         if f".{normalized}" in parts:
             return Path(configured).expanduser().resolve()
@@ -48,7 +48,7 @@ def register(app: typer.Typer) -> None:
     ) -> None:
         try:
             pipeline = build_add_pipeline(config)
-            configuration = getattr(pipeline, "config", None) or load_or_create_config(config)
+            configuration = getattr(pipeline, "config", None) or load_config(config)
             targets = target or ["codex"]
             target_paths = [_target_root(item, configuration) for item in targets]
             prepared = pipeline.prepare(source, targets, target_paths)

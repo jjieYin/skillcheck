@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
@@ -14,18 +13,6 @@ from skillcheck.reports import ReportWriter
 from skillcheck.reports.writer import ReportPaths, make_audit_report_id
 
 from .sync_pipeline import SyncPipeline
-
-
-class ReviewMode(StrEnum):
-    """Temporary compatibility import for the legacy add command.
-
-    The local scan pipeline never consumes this value.  Task 11 rewrites add
-    and Task 12 removes the compatibility type with the legacy review stack.
-    """
-
-    NONE = "none"
-    CODEX = "codex"
-    CLAUDE = "claude"
 
 
 class LocalScanResult(BaseModel):

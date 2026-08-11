@@ -155,14 +155,14 @@ class McpRuntime:
 
     def _ensure_catalog(self) -> None:
         if self.repository is None:
-            self.repository = CatalogRepository(CatalogDatabase(self.config.index_path))
+            self.repository = CatalogRepository(CatalogDatabase(self.config.catalog.database_path))
         if self.reconciler is None:
             self.reconciler = CatalogReconciler(self.repository)
 
     def _register_project_roots(self) -> list[LibraryRoot]:
         assert self.repository is not None
         existing = {self._normalized_path(root.path) for root in self.repository.list_roots()}
-        discovered = discover_library_roots(self.home, self.project_path, self.config.scan.extra_paths)
+        discovered = discover_library_roots(self.home, self.project_path, self.config.catalog.roots)
         for root in discovered:
             if root.scope is RootScope.PROJECT and self._normalized_path(root.path) not in existing:
                 self.repository.upsert_root(root)

@@ -41,7 +41,7 @@ def test_stdio_stops_runtime_when_server_raises(monkeypatch, tmp_path) -> None:
             raise RuntimeError("server stopped unexpectedly")
 
     config = SimpleNamespace()
-    monkeypatch.setattr("skillcheck.mcp.server.load_or_create_config", lambda _: config)
+    monkeypatch.setattr("skillcheck.mcp.server.load_config", lambda _: config)
     monkeypatch.setattr("skillcheck.mcp.server.McpRuntime", lambda value: Runtime())
     monkeypatch.setattr("skillcheck.mcp.server.SkillcheckMcpTools", lambda value: object())
     monkeypatch.setattr("skillcheck.mcp.server.create_server", lambda value: Server())

@@ -20,7 +20,7 @@ def test_preview_is_side_effect_free_and_cancel_does_not_create_catalog(tmp_path
     result = pipeline.apply(preview, confirmed=False)
 
     assert [item.path for item in preview.roots] == [root.resolve()]
-    assert preview.database_path == config.index_path
+    assert preview.database_path == config.catalog.database_path
     assert result.changed is False
     assert not preview.database_path.exists()
     assert not config_path.exists()
@@ -41,7 +41,7 @@ def test_confirmed_apply_initializes_catalog_persists_roots_and_config(tmp_path:
     assert result.sync.revision == "initial"
     assert config.catalog.initialized is True
     assert config.catalog.roots == [root.resolve()]
-    assert CatalogRepository(CatalogDatabase(config.index_path)).list_roots()[0].path == root.resolve()
+    assert CatalogRepository(CatalogDatabase(config.catalog.database_path)).list_roots()[0].path == root.resolve()
     assert "schema_version: 4" in config_path.read_text(encoding="utf-8")
     assert "catalog:" in config_path.read_text(encoding="utf-8")
 

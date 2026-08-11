@@ -24,7 +24,7 @@ def test_no_args_shows_status_when_initialized(monkeypatch, tmp_path) -> None:
     config = AppConfig.default(home=tmp_path / "home")
     config.catalog.initialized = True
     config.targets.configured = ["codex"]
-    CatalogDatabase(config.index_path).initialize()
+    CatalogDatabase(config.catalog.database_path).initialize()
     save_config(home / "config.yaml", config)
 
     result = runner.invoke(app, [])

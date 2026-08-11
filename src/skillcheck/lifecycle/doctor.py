@@ -166,7 +166,7 @@ class Doctor:
             code="config.parse",
             status=CheckStatus.WARNING,
             message="尚未发现配置文件，将使用默认配置",
-            remediation="运行 skillcheck setup 初始化配置",
+            remediation="运行 skillcheck install 初始化配置",
         )
 
     def _database_integrity(self) -> DoctorCheck:
@@ -219,7 +219,7 @@ class Doctor:
                 code="targets.detect",
                 status=CheckStatus.WARNING,
                 message="未检测到可用 Agent",
-                remediation="运行 skillcheck setup 选择 Agent",
+                remediation="运行 skillcheck install 选择 Agent",
             )
         registry = getattr(self.context, "registry", None)
         if registry is None:
@@ -233,7 +233,7 @@ class Doctor:
             code="targets.detect",
             status=CheckStatus.OK if detected else CheckStatus.WARNING,
             message=f"已检测到 {len(detected)} 个 Agent" if detected else "未检测到可用 Agent",
-            remediation=None if detected else "运行 skillcheck setup 选择 Agent",
+            remediation=None if detected else "运行 skillcheck install 选择 Agent",
         )
 
     def _reviewers_detect(self) -> DoctorCheck:

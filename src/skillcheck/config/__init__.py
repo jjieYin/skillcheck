@@ -1,15 +1,12 @@
-"""Versioned configuration API with v1 compatibility exports."""
+"""Strict v4 configuration API."""
 
-from skillcheck.config.loader import load_config, load_or_create_config, save_config, yaml_payload
+from skillcheck.config.loader import load_config, save_config, yaml_payload
 from skillcheck.config.models import (
     AppConfig,
     CatalogConfig,
     EmbeddingConfig,
-    LLMConfig,
     PrivacyConfig,
     ReportsConfig,
-    ReviewConfig,
-    ScanConfig,
     SecurityConfig,
     TargetConfig,
     ThresholdConfig,
@@ -20,17 +17,13 @@ __all__ = [
     "AppConfig",
     "CatalogConfig",
     "EmbeddingConfig",
-    "LLMConfig",
     "PrivacyConfig",
     "ReportsConfig",
-    "ReviewConfig",
-    "ScanConfig",
     "SecurityConfig",
     "TargetConfig",
     "ThresholdConfig",
     "app_home",
     "load_config",
-    "load_or_create_config",
     "save_config",
     "yaml_payload",
 ]

@@ -5,7 +5,6 @@ from pydantic import BaseModel, Field
 
 from skillcheck.models.audit import CandidateMatch, Finding, LibraryAuditReport
 from skillcheck.models.common import Decision
-from skillcheck.models.review import AgentReview
 
 
 class CheckReport(BaseModel):
@@ -40,20 +39,9 @@ class ReportBundle(BaseModel):
     json_path: Path
 
 
-class ScanOutcome(BaseModel):
-    run: ScanRun
-    skill_count: int
-    group_counts: dict[str, int] = Field(default_factory=dict)
-    high_priority_count: int = 0
-    review: AgentReview
-    report: ReportBundle
-    modified_skill_paths: list[Path] = Field(default_factory=list)
-
-
 __all__ = [
     "CheckReport",
     "LibraryAuditReport",
     "ReportBundle",
-    "ScanOutcome",
     "ScanRun",
 ]

@@ -34,7 +34,7 @@ def test_status_reads_catalog_counts_and_latest_sync(monkeypatch, tmp_path) -> N
     config = AppConfig.default(home=tmp_path / "home")
     config.catalog.initialized = True
     config.targets.configured = ["codex", "claude"]
-    database = CatalogDatabase(config.index_path)
+    database = CatalogDatabase(config.catalog.database_path)
     database.initialize()
     with database.connect() as connection:
         connection.execute(

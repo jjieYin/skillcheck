@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from pydantic import TypeAdapter
@@ -85,5 +84,5 @@ class SkillcheckMcpTools:
         if self._reviews is None:
             if self.runtime.repository is None:
                 raise RuntimeError("Skill catalog is not initialized; run 'skillcheck init' first")
-            self._reviews = ReviewService(self.runtime.repository, Path(self.runtime.config.reports_path))
+            self._reviews = ReviewService(self.runtime.repository, self.runtime.config.reports.directory)
         return self._reviews

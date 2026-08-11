@@ -7,7 +7,7 @@ from pathlib import Path
 from skillcheck.catalog.database import CatalogDatabase
 from skillcheck.catalog.reconcile import CatalogReconciler
 from skillcheck.catalog.repository import CatalogRepository
-from skillcheck.config import load_or_create_config
+from skillcheck.config import load_config
 from skillcheck.embeddings import backend_from_config
 from skillcheck.governance.analyzer import GovernanceAnalyzer
 from skillcheck.installation.executor import InstallationExecutor
@@ -19,8 +19,8 @@ from skillcheck.reports import ReportWriter
 
 
 def build_scan_pipeline(config_path: Path | str | None = None) -> ScanPipeline:
-    config = load_or_create_config(config_path)
-    database = CatalogDatabase(config.index_path)
+    config = load_config(config_path)
+    database = CatalogDatabase(config.catalog.database_path)
     if config.catalog.initialized:
         database.initialize()
     repository = CatalogRepository(database)
@@ -28,20 +28,20 @@ def build_scan_pipeline(config_path: Path | str | None = None) -> ScanPipeline:
     return ScanPipeline(
         SyncPipeline(config, repository, reconciler),
         GovernanceAnalyzer(repository),
-        ReportWriter(config.reports_path),
+        ReportWriter(config.reports.directory),
     )
 
 
 def build_add_pipeline(config_path: Path | str | None = None) -> AddPipeline:
-    config = load_or_create_config(config_path)
-    database = CatalogDatabase(config.index_path)
+    config = load_config(config_path)
+    database = CatalogDatabase(config.catalog.database_path)
     if not config.catalog.initialized:
         raise ValueError("请先运行 skillcheck init")
     database.initialize()
     repository = CatalogRepository(database)
     pipeline = AddPipeline(
-        governance=GovernanceAnalyzer(repository, staging_root=config.staging_path),
-        planner=InstallationPlanner(staging_parent=config.staging_path),
+        governance=GovernanceAnalyzer(repository, staging_root=config.catalog.staging_path),
+        planner=InstallationPlanner(staging_parent=config.catalog.staging_path),
         executor=InstallationExecutor(),
     )
     pipeline.config = config

@@ -5,6 +5,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from skillcheck.app.main import app
+from skillcheck.config import AppConfig
 from skillcheck.pipelines.add_pipeline import AddResult, PreparedAdd
 
 runner = CliRunner()
@@ -13,6 +14,7 @@ runner = CliRunner()
 class FakeAddPipeline:
     def __init__(self, target: Path) -> None:
         self.target = target
+        self.config = AppConfig.default(target.parent)
         self.prepared = PreparedAdd(
             source="source",
             source_hash="sha256:test",
@@ -48,6 +50,6 @@ def test_add_shows_preflight_then_installs_only_with_yes(monkeypatch, tmp_path: 
     assert pipeline.executed is True
 
 
-def test_add_has_no_legacy_review_or_check_only_options() -> None:
-    assert runner.invoke(app, ["add", "source", "--review", "none"]).exit_code != 0
+def test_add_rejects_unsupported_options() -> None:
+    assert runner.invoke(app, ["add", "source", "--obsolete-option"]).exit_code != 0
     assert runner.invoke(app, ["add", "source", "--check-only"]).exit_code != 0

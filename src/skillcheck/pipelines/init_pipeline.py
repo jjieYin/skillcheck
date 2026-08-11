@@ -47,7 +47,7 @@ class InitPipeline:
     def preview(self, roots: Iterable[LibraryRoot]) -> InitPreview:
         return InitPreview(
             roots=sorted(roots, key=lambda root: str(root.path)),
-            database_path=self.config.index_path,
+            database_path=self.config.catalog.database_path,
         )
 
     def apply(self, preview: InitPreview, *, confirmed: bool) -> InitResult:

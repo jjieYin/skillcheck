@@ -33,7 +33,7 @@ def test_scan_is_local_only(monkeypatch) -> None:
     assert "report.json" in invocation.stdout
 
 
-def test_scan_accepts_only_path_json_and_config() -> None:
-    result = runner.invoke(app, ["scan", "--review", "none"])
+def test_scan_rejects_unknown_options() -> None:
+    result = runner.invoke(app, ["scan", "--obsolete-option"])
 
     assert result.exit_code != 0

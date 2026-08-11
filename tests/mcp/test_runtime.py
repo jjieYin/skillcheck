@@ -44,14 +44,14 @@ class FailingWatcher(RecordingWatcher):
 
 def _config(tmp_path: Path, *, initialized: bool = True) -> AppConfig:
     config = AppConfig.default(home=tmp_path / "home")
-    config.index_path = tmp_path / "catalog.db"
+    config.catalog.database_path = tmp_path / "catalog.db"
     config.catalog.initialized = initialized
     return config
 
 
 def test_runtime_reconciles_before_first_query_and_stops_watcher(tmp_path: Path) -> None:
     config = _config(tmp_path)
-    database = CatalogDatabase(config.index_path)
+    database = CatalogDatabase(config.catalog.database_path)
     database.initialize()
     reconciler = RecordingReconciler()
     runtime = McpRuntime(
@@ -76,7 +76,7 @@ def test_runtime_registers_new_project_roots_on_connection(tmp_path: Path) -> No
     skills = project / ".codex" / "skills"
     skills.mkdir(parents=True)
     config = _config(tmp_path)
-    database = CatalogDatabase(config.index_path)
+    database = CatalogDatabase(config.catalog.database_path)
     database.initialize()
     runtime = McpRuntime(
         config,
@@ -97,7 +97,7 @@ def test_runtime_registers_new_project_roots_on_connection(tmp_path: Path) -> No
 
 def test_pending_change_marks_related_evidence_stale_and_syncs_before_query(tmp_path: Path) -> None:
     config = _config(tmp_path)
-    database = CatalogDatabase(config.index_path)
+    database = CatalogDatabase(config.catalog.database_path)
     database.initialize()
     reconciler = RecordingReconciler()
     runtime = McpRuntime(
@@ -123,13 +123,13 @@ def test_runtime_does_not_create_database_before_init(tmp_path: Path) -> None:
 
     runtime.start()
 
-    assert not config.index_path.exists()
+    assert not config.catalog.database_path.exists()
     assert runtime.status().state == "not_initialized"
 
 
 def test_runtime_reports_watcher_failure_as_degraded(tmp_path: Path) -> None:
     config = _config(tmp_path)
-    database = CatalogDatabase(config.index_path)
+    database = CatalogDatabase(config.catalog.database_path)
     database.initialize()
     runtime = McpRuntime(
         config,
@@ -150,7 +150,7 @@ def test_runtime_uses_current_project_directory_when_started(tmp_path: Path, mon
     skills = project / ".codex" / "skills"
     skills.mkdir(parents=True)
     config = _config(tmp_path)
-    database = CatalogDatabase(config.index_path)
+    database = CatalogDatabase(config.catalog.database_path)
     database.initialize()
     runtime = McpRuntime(
         config,
@@ -186,7 +186,7 @@ def test_before_query_serializes_incremental_reconciles(tmp_path: Path) -> None:
             return super().reconcile(roots, changed_paths)
 
     config = _config(tmp_path)
-    database = CatalogDatabase(config.index_path)
+    database = CatalogDatabase(config.catalog.database_path)
     database.initialize()
     reconciler = BlockingReconciler()
     runtime = McpRuntime(

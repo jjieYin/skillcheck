@@ -1,6 +1,4 @@
-"""Report builders plus v1-compatible report writer exports."""
-
-from skillcheck.reports.builder import BaseReport, ReportBuilder, ReportDocument
+"""Local report writer exports."""
 from skillcheck.reports.writer import (
     ReportPaths,
     ReportWriter,
@@ -9,9 +7,6 @@ from skillcheck.reports.writer import (
 )
 
 __all__ = [
-    "BaseReport",
-    "ReportBuilder",
-    "ReportDocument",
     "ReportPaths",
     "ReportWriter",
     "make_audit_report_id",
