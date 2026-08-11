@@ -68,8 +68,18 @@ jobs:
           if (( doctor_code > 1 )); then
             exit "$doctor_code"
           fi
-          # MCP is a long-running stdio service: a startup timeout is the smoke check.
-          timeout 5 "$executable" serve --mcp || test "$?" -eq 124
+          # MCP is a long-running stdio service; Python's timeout works on all runners.
+          python - "$executable" <<'PY'
+          import subprocess
+          import sys
+
+          try:
+              result = subprocess.run([sys.argv[1], "serve", "--mcp"], timeout=5)
+          except subprocess.TimeoutExpired:
+              raise SystemExit(0)
+          if result.returncode != 0:
+              raise SystemExit(result.returncode)
+          PY
 
       - name: Stage asset and manifest
         shell: bash
