@@ -10,9 +10,11 @@ from pydantic import BaseModel
 from skillcheck.catalog.database import CatalogDatabase
 from skillcheck.catalog.discovery import discover_library_roots
 from skillcheck.catalog.models import LibraryRoot, SyncSummary
+from skillcheck.catalog.reconcile import CatalogReconciler
 from skillcheck.catalog.repository import CatalogRepository
 from skillcheck.config.loader import save_config
 from skillcheck.config.models import AppConfig
+from skillcheck.embeddings import backend_from_config
 
 
 class InitPreview(BaseModel):
@@ -39,7 +41,7 @@ class InitPipeline:
         self.config_path = Path(config_path).expanduser()
         self.home = Path.home() if home is None else Path(home).expanduser()
         self.project = Path.cwd() if project is None else Path(project).expanduser()
-        self._reconcile = reconcile or _initial_reconcile
+        self._reconcile = reconcile or self._reconcile_catalog
 
     def discover(self, extra_paths: Iterable[Path | str]) -> list[LibraryRoot]:
         return discover_library_roots(self.home, self.project, extra_paths)
@@ -66,8 +68,18 @@ class InitPipeline:
         save_config(self.config_path, self.config)
         return InitResult(changed=True, sync=sync)
 
+    def _reconcile_catalog(self, roots: list[LibraryRoot]) -> SyncSummary:
+        """Index the discovered roots during the initial setup itself.
 
-def _initial_reconcile(roots: list[LibraryRoot]) -> SyncSummary:
-    """Temporary Task 3 seam; Task 4 replaces it with the catalog reconciler."""
-    del roots
-    return SyncSummary(revision="initial")
+        Initialization must leave a usable catalog behind.  Previously this
+        default path was a placeholder, so ``init`` created the database but
+        never inserted the discovered ``SKILL.md`` files.
+        """
+        database = CatalogDatabase(self.config.catalog.database_path)
+        repository = CatalogRepository(database)
+        reconciler = CatalogReconciler(
+            repository, embedding=backend_from_config(self.config.embedding)
+        )
+        return reconciler.reconcile(roots)
+
+

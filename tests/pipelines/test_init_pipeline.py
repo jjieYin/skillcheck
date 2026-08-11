@@ -38,12 +38,33 @@ def test_confirmed_apply_initializes_catalog_persists_roots_and_config(tmp_path:
     result = pipeline.apply(pipeline.preview(pipeline.discover([])), confirmed=True)
 
     assert result.changed is True
-    assert result.sync.revision == "initial"
+    assert result.sync.revision.startswith("sync-")
     assert config.catalog.initialized is True
     assert config.catalog.roots == [root.resolve()]
     assert CatalogRepository(CatalogDatabase(config.catalog.database_path)).list_roots()[0].path == root.resolve()
     assert "schema_version: 4" in config_path.read_text(encoding="utf-8")
     assert "catalog:" in config_path.read_text(encoding="utf-8")
+
+
+def test_confirmed_apply_indexes_skill_files_during_initialization(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    project = tmp_path / "project"
+    skill_root = home / ".codex" / "skills" / "demo"
+    skill_root.mkdir(parents=True)
+    (skill_root / "SKILL.md").write_text(
+        "---\nname: demo\ndescription: Demo skill\n---\n\nRun the demo task.\n",
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "config.yaml"
+    config = AppConfig.default(home)
+    pipeline = InitPipeline(config, config_path, home=home, project=project)
+
+    result = pipeline.apply(pipeline.preview(pipeline.discover([])), confirmed=True)
+
+    repository = CatalogRepository(CatalogDatabase(config.catalog.database_path))
+    assert result.sync.added == 1
+    assert len(repository.list_current_skills()) == 1
+    assert repository.list_current_skills()[0].name == "demo"
 
 
 def test_confirmed_apply_returns_the_injected_initial_reconcile_summary(tmp_path: Path) -> None:
