@@ -123,11 +123,24 @@ class Doctor:
         try:
             uri = f"{path.resolve().as_uri()}?mode=ro"
             with sqlite3.connect(uri, uri=True) as connection:
+                connection.row_factory = sqlite3.Row
                 integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
                 schema = connection.execute(
                     "SELECT value FROM schema_meta WHERE key = 'schema_version'"
                 ).fetchone()
-                valid = integrity == "ok" and schema is not None and schema[0] == "4"
+                tables = {
+                    row["name"]
+                    for row in connection.execute(
+                        "SELECT name FROM sqlite_master WHERE type IN ('table', 'virtual table')"
+                    )
+                }
+                valid = (
+                    integrity == "ok"
+                    and schema is not None
+                    and schema[0] == "4"
+                    and CatalogDatabase._expected_tables() <= tables
+                    and CatalogDatabase._has_expected_structure(connection)
+                )
         except (sqlite3.Error, OSError):
             valid = False
         return self._check("catalog.integrity", valid, "Catalog integrity is valid", "Keep the existing file for backup, then run skillcheck init again.", error=not valid)

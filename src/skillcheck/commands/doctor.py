@@ -11,7 +11,7 @@ import typer
 
 from skillcheck.catalog.database import CatalogDatabase
 from skillcheck.commands.install import _build_install_pipeline
-from skillcheck.config import app_home, load_config
+from skillcheck.config import app_home, load_config, save_config
 from skillcheck.lifecycle.doctor import Doctor
 
 
@@ -42,14 +42,14 @@ def build_doctor_context(config_path: Path | None):
     try:
         config = load_config(path, create=False)
     except Exception as exc:  # noqa: BLE001 - diagnostics must report malformed configs
-            return SimpleNamespace(
-                config_path=path,
-                config_error=str(type(exc).__name__),
-                index_path=app_home() / "index.db",
-                reports_path=app_home() / "reports",
-                targets_detected=False,
-                reviewer_available=False,
-            )
+        return SimpleNamespace(
+            config_path=path,
+            config_error=str(type(exc).__name__),
+            index_path=app_home() / "index.db",
+            reports_path=app_home() / "reports",
+            targets_detected=False,
+            reviewer_available=False,
+        )
     pipeline = _build_install_pipeline(config)
 
     def rewrite() -> None:
@@ -58,7 +58,16 @@ def build_doctor_context(config_path: Path | None):
             selected = [item.agent.value for item in pipeline.discover().agents if item.cli_path or item.config_path]
         if selected:
             preview = pipeline.preview(selected, scope=config.targets.scope)
-            pipeline.apply(preview, confirmed=True)
+            result = pipeline.apply(preview, confirmed=True)
+            if all(result.validations):
+                config.targets.configured = list(dict.fromkeys(selected))
+                config.targets.last_validated = True
+                save_config(path, config)
+
+    def initialize_catalog() -> None:
+        CatalogDatabase(config.catalog.database_path).initialize()
+        config.catalog.initialized = True
+        save_config(path, config)
 
     return SimpleNamespace(
         config=config,
@@ -67,7 +76,7 @@ def build_doctor_context(config_path: Path | None):
         reports_path=config.reports.directory,
         registry=pipeline.registry,
         rewrite_skillcheck_integration=rewrite,
-        initialize_empty_catalog=lambda: CatalogDatabase(config.catalog.database_path).initialize(),
+        initialize_empty_catalog=initialize_catalog,
     )
 
 

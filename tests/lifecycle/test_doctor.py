@@ -44,3 +44,28 @@ def test_doctor_does_not_mutate_an_empty_catalog_during_diagnostics(tmp_path: Pa
     Doctor(context).run()
 
     assert index.read_bytes() == before
+
+
+def test_doctor_rejects_schema_marker_without_complete_v4_catalog(tmp_path: Path) -> None:
+    index = tmp_path / "index.db"
+    import sqlite3
+
+    with sqlite3.connect(index) as connection:
+        connection.execute("CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        connection.execute("INSERT INTO schema_meta VALUES ('schema_version', '4')")
+    before = index.read_bytes()
+    context = SimpleNamespace(
+        python_version=(3, 11, 0),
+        path_shadowing=False,
+        config=SimpleNamespace(schema_version=4, catalog=SimpleNamespace(initialized=True)),
+        index_path=index,
+        reports_path=tmp_path,
+        registry=None,
+        mcp_available=True,
+    )
+
+    report = Doctor(context).run()
+
+    integrity = next(item for item in report.checks if item.code == "catalog.integrity")
+    assert integrity.status.value == "error"
+    assert index.read_bytes() == before
