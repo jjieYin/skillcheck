@@ -62,3 +62,31 @@ def test_local_source_symlink_is_rejected(tmp_path: Path) -> None:
 
     staging = tmp_path / "staging"
     assert not staging.exists() or list(staging.iterdir()) == []
+
+
+def test_github_source_symlink_is_rejected_and_cleaned_up(monkeypatch, tmp_path: Path) -> None:
+    import subprocess
+
+    from skillcheck import sources
+
+    outside = tmp_path / "outside.txt"
+    outside.write_text("secret", encoding="utf-8")
+
+    def fake_run(args, **kwargs):
+        target = Path(args[-1])
+        target.mkdir(parents=True)
+        (target / "SKILL.md").write_text("---\nname: demo\n---\nbody", encoding="utf-8")
+        try:
+            (target / "linked.txt").symlink_to(outside)
+        except OSError as exc:
+            pytest.skip(f"symlinks unavailable: {exc}")
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(sources, "subprocess", subprocess)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    staging = tmp_path / "staging"
+    with pytest.raises(SourceSafetyError, match="symlink"):
+        stage_source("https://github.com/example/skill", staging_parent=staging)
+
+    assert not staging.exists() or list(staging.iterdir()) == []

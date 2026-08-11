@@ -21,3 +21,7 @@
 - The prepared hash must now equal the linked preflight hash; a source change between the first staging pass and analysis is rejected.
 - Source preflight now uses the existing deterministic validator for every staged Skill, covering shell/process execution, credentials, hidden Unicode, remote-download pipes, and unsafe paths. Malformed Skill metadata is also blocked as `SEC006`.
 - Local directory sources reject symlinks before their hash can be calculated or files copied during installation.
+
+## Review fix round 2
+
+- GitHub clone staging now runs the same symlink rejection before locating the Skill root; rejected clone trees are removed before the error is returned.

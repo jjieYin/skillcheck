@@ -59,17 +59,17 @@ def stage_source(
     if path.is_symlink():
         raise SourceSafetyError("local source symlink is not allowed")
     if path.is_dir():
-        _reject_local_symlinks(path)
+        _reject_source_symlinks(path)
         return StagedSource(locator, path.resolve())
     if path.is_file() and path.suffix.casefold() == ".zip":
         return _stage_zip(locator, path.resolve(), limits, staging_parent)
     raise SourceSafetyError("source must be a directory, ZIP archive, or HTTPS GitHub URL")
 
 
-def _reject_local_symlinks(root: Path) -> None:
+def _reject_source_symlinks(root: Path) -> None:
     for item in root.rglob("*"):
         if item.is_symlink():
-            raise SourceSafetyError(f"local source symlink is not allowed: {item}")
+            raise SourceSafetyError(f"source symlink is not allowed: {item}")
 
 
 def _stage_zip(
@@ -138,10 +138,14 @@ def _stage_github(source: str, staging_parent: Path | str | None) -> StagedSourc
             capture_output=True,
             text=True,
         )
+        _reject_source_symlinks(target)
+        return StagedSource(source, _locate_skill_root(target), temp_root)
+    except SourceSafetyError:
+        shutil.rmtree(temp_root, ignore_errors=True)
+        raise
     except (OSError, subprocess.SubprocessError) as exc:
         shutil.rmtree(temp_root, ignore_errors=True)
         raise SourceSafetyError(f"GitHub source could not be cloned: {source}") from exc
-    return StagedSource(source, _locate_skill_root(target), temp_root)
 
 
 def _is_github_url(source: str) -> bool:
