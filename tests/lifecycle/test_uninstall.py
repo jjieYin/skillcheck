@@ -38,7 +38,7 @@ def test_default_uninstall_preserves_user_data(tmp_path: Path) -> None:
     context = FakeContext(tmp_path)
     manager = UninstallManager(context)
     plan = manager.plan()
-    assert plan.remove_program is True
+    assert plan.remove_program is False
     assert plan.remove_agent_configs is True
     assert plan.remove_index is False
     assert plan.remove_reports is False
@@ -49,15 +49,27 @@ def test_default_uninstall_preserves_user_data(tmp_path: Path) -> None:
     assert context.report.exists()
 
 
+def test_complete_uninstall_respects_keep_flags_and_cancelled_plan(tmp_path: Path) -> None:
+    context = FakeContext(tmp_path)
+    manager = UninstallManager(context)
+
+    plan = manager.plan(complete=True, keep_cli=True, keep_data=True)
+    cancelled = manager.execute(plan, confirmed=False)
+
+    assert plan.remove_program is False
+    assert plan.remove_index is False
+    assert cancelled.cancelled is True
+    assert context.calls == []
+
+
 def test_uninstall_rejects_wildcard_path(tmp_path: Path) -> None:
     context = FakeContext(tmp_path)
     plan = context.layout.owned_program_paths()
     plan.append(tmp_path / "*")
     context.layout.owned_program_paths = lambda: plan
     try:
-        UninstallManager(context).plan()
+            UninstallManager(context).plan(complete=True)
     except ValueError as exc:
-        assert "通配符" in str(exc)
+        assert "wildcards" in str(exc)
     else:
         raise AssertionError("wildcard path must be rejected")
-
