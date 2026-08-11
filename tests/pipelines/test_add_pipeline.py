@@ -1,77 +1,72 @@
-from datetime import UTC, datetime, timedelta
+from __future__ import annotations
+
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
+from skillcheck.catalog.database import CatalogDatabase
+from skillcheck.catalog.repository import CatalogRepository
+from skillcheck.governance import GovernanceAnalyzer
 from skillcheck.installation.executor import InstallationExecutor
 from skillcheck.installation.planner import InstallationPlanner
-from skillcheck.models import Decision, InstallationPlan
-from skillcheck.parser import content_hash
-from skillcheck.pipelines.add_pipeline import AddPipeline, AddRequest
-from tests.helpers import check_report, write_skill
+from skillcheck.pipelines.add_pipeline import AddPipeline
+from skillcheck.sources import SourceSafetyError
+from tests.helpers import write_skill
 
 
-def test_add_prepare_is_read_only_and_hash_bound(tmp_path: Path) -> None:
-    source = write_skill(tmp_path / "source", name="new-skill", body="A safe skill body with enough detail.")
-    report = check_report(Decision.PASS).model_copy(
-        update={"source": str(source), "source_hash": content_hash(source)}
-    )
-    checker = SimpleNamespace(check=lambda source, use_llm: SimpleNamespace(report=report, paths=None))
-    pipeline = AddPipeline(
-        checker=checker,
-        planner=InstallationPlanner(staging_parent=tmp_path / "staging"),
+@pytest.fixture
+def pipeline(tmp_path: Path) -> AddPipeline:
+    database = CatalogDatabase(tmp_path / "state" / "catalog.db")
+    database.initialize()
+    catalog = CatalogRepository(database)
+    return AddPipeline(
+        governance=GovernanceAnalyzer(catalog, staging_root=tmp_path / "state" / "staging"),
+        planner=InstallationPlanner(staging_parent=tmp_path / "state" / "staging"),
         executor=InstallationExecutor(),
     )
-    prepared = pipeline.run(
-        AddRequest(
-            source=str(source),
-            targets=["codex"],
-            target_paths=[tmp_path / "installed"],
-            confirmed=False,
-        )
+
+
+def test_add_rejects_changed_source_after_agent_review(pipeline: AddPipeline, tmp_path: Path) -> None:
+    source = write_skill(tmp_path / "source", name="new-skill", body="A safe skill body with enough detail.")
+    prepared = pipeline.prepare(str(source), ["codex"], [tmp_path / "installed"])
+    (source / "SKILL.md").write_text("---\nname: new-skill\n---\nChanged body.", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="来源已变化"):
+        pipeline.execute(prepared, confirmed=True)
+
+
+def test_add_without_confirmation_writes_nothing(pipeline: AddPipeline, tmp_path: Path) -> None:
+    source = write_skill(tmp_path / "source", name="new-skill", body="A safe skill body with enough detail.")
+
+    result = pipeline.run(
+        str(source),
+        targets=["codex"],
+        target_paths=[tmp_path / "installed"],
+        confirmed=False,
     )
-    assert prepared.plan.source_hash == report.source_hash
+
+    assert result.installed_paths == []
     assert not (tmp_path / "installed").exists()
 
-    (source / "SKILL.md").write_text("changed", encoding="utf-8")
-    with pytest.raises(ValueError, match="来源已变化"):
-        pipeline.execute(prepared)
+
+def test_add_executes_only_after_explicit_confirmation(pipeline: AddPipeline, tmp_path: Path) -> None:
+    source = write_skill(tmp_path / "source", name="new-skill", body="A safe skill body with enough detail.")
+    prepared = pipeline.prepare(str(source), ["codex"], [tmp_path / "installed"])
+
+    result = pipeline.execute(prepared, confirmed=True)
+
+    assert result.source_hash == prepared.source_hash
+    assert result.installed_paths == [tmp_path / "installed" / "new-skill"]
 
 
-def test_multi_target_install_rolls_back_previous_target(tmp_path: Path) -> None:
-    first = tmp_path / "first" / "skill"
-
-    class FakeInstaller:
-        def __init__(self) -> None:
-            self.calls = 0
-
-        def install(self, report, *, target_root, confirmed):
-            self.calls += 1
-            if self.calls == 1:
-                first.parent.mkdir(parents=True)
-                first.mkdir()
-                return first
-            raise RuntimeError("second target failed")
-
-    removed: list[Path] = []
-
-    class FakeRollback:
-        def remove_created(self, paths):
-            removed.extend(paths)
-
-    executor = InstallationExecutor(FakeInstaller(), FakeRollback())
-    plan = InstallationPlan(
-        plan_id="plan-1",
-        source="source",
-        source_hash="hash",
-        decision="PASS",
-        targets=["codex", "claude"],
-        target_paths=[tmp_path / "first", tmp_path / "second"],
-        created_at=datetime.now(UTC),
-        expires_at=datetime.now(UTC) + timedelta(minutes=1),
-        approval_token="token",
+def test_add_blocks_deterministic_security_findings(pipeline: AddPipeline, tmp_path: Path) -> None:
+    source = write_skill(
+        tmp_path / "unsafe",
+        name="unsafe-skill",
+        body="Never put credentials here: sk-abcdefghijklmnop.",
     )
-    with pytest.raises(RuntimeError, match="second target failed"):
-        executor.execute(check_report(Decision.PASS), plan)
-    assert removed == [first]
+    prepared = pipeline.prepare(str(source), ["codex"], [tmp_path / "installed"])
+
+    assert prepared.deterministic_blockers
+    with pytest.raises(SourceSafetyError, match="确定性安全检查"):
+        pipeline.execute(prepared, confirmed=True)

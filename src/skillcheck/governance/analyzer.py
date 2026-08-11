@@ -3,11 +3,9 @@ from __future__ import annotations
 import hashlib
 import math
 import re
-import zipfile
 from collections.abc import Iterable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from uuid import uuid4
 
 import numpy as np
@@ -16,9 +14,10 @@ from skillcheck.catalog.ids import root_id, skill_id, snapshot_id
 from skillcheck.catalog.models import LibraryRoot, RootScope, SkillSnapshot, SkillStatus
 from skillcheck.catalog.repository import CatalogRepository
 from skillcheck.core.audit import LibraryAuditor
-from skillcheck.core.parser import SkillParseError, parse_skill
+from skillcheck.core.parser import SkillParseError, content_hash, parse_skill
 from skillcheck.mcp.runtime import McpRuntime
 from skillcheck.models import Finding, Severity, SkillRecord
+from skillcheck.sources import SourceLimits, stage_source
 
 from .models import (
     AnalyzeMode,
@@ -28,6 +27,7 @@ from .models import (
     EvidencePage,
     EvidenceSkill,
     Relation,
+    SourcePreflight,
 )
 from .repository import GovernanceRepository
 
@@ -58,10 +58,19 @@ class GovernanceAnalyzer:
     This boundary intentionally has no Agent, process, or network dependency.
     """
 
-    def __init__(self, catalog: CatalogRepository, runtime: McpRuntime | None = None) -> None:
+    def __init__(
+        self,
+        catalog: CatalogRepository,
+        runtime: McpRuntime | None = None,
+        *,
+        staging_root: Path | str | None = None,
+        source_limits: SourceLimits | None = None,
+    ) -> None:
         self.catalog = catalog
         self.runtime = runtime
         self.repository = GovernanceRepository(catalog)
+        self.staging_root = Path(staging_root or catalog.database.path.parent / "staging").expanduser()
+        self.source_limits = source_limits or SourceLimits()
 
     def analyze(
         self,
@@ -86,21 +95,18 @@ class GovernanceAnalyzer:
         snapshots = self.catalog.list_current_skills()
         return self._analyze(AnalyzeMode.LIBRARY, snapshots, self._revision(), stale, limit)
 
-    def analyze_source(self, source: Path | str, *, limit: int = 20) -> AnalyzeResult:
+    def analyze_source(
+        self, source: Path | str, *, scope: str = "all", limit: int = 20
+    ) -> AnalyzeResult:
         self._validate_limit(limit)
-        source_path = Path(source).expanduser()
-        if not source_path.exists():
-            raise ValueError("source must be a staged local directory or ZIP file")
-        if source_path.is_file() and source_path.suffix.casefold() != ".zip":
-            raise ValueError("source must be a staged local directory or ZIP file")
-        with TemporaryDirectory() if source_path.is_file() else _NoopDirectory(source_path) as staged:
-            root = Path(staged)
-            if source_path.is_file():
-                self._extract_zip(source_path, root)
-            source_hash = _source_hash(root)
+        del scope
+        self.staging_root.mkdir(parents=True, exist_ok=True)
+        with stage_source(source, limits=self.source_limits, staging_parent=self.staging_root) as staged:
+            root = staged.root
+            source_hash = content_hash(root)
             source_snapshots = self._source_snapshots(root, source_hash)
             snapshots = [*source_snapshots, *self.catalog.list_current_skills()]
-            return self._analyze(
+            result = self._analyze(
                 AnalyzeMode.SOURCE,
                 snapshots,
                 source_hash,
@@ -109,6 +115,23 @@ class GovernanceAnalyzer:
                 lexical_fallback=True,
                 source_skill_ids={item.skill_id for item in source_snapshots},
             )
+            created_at = datetime.now(UTC)
+            self.repository.save_source_preflight(
+                SourcePreflight(
+                    run_id=result.run_id,
+                    source=str(source),
+                    source_hash=source_hash,
+                    created_at=created_at,
+                    expires_at=created_at + timedelta(minutes=15),
+                    deterministic_blockers=[
+                        finding
+                        for snapshot in source_snapshots
+                        for finding in _snapshot_findings(snapshot)
+                        if finding.rule_id.startswith("SEC")
+                    ],
+                )
+            )
+            return result
 
     def evidence(
         self, run_id: str, group_id: str, page: int = 1, include_body: bool = False
@@ -331,42 +354,6 @@ class GovernanceAnalyzer:
     def _validate_limit(limit: int) -> None:
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
             raise ValueError("limit must be between 1 and 100")
-
-    @staticmethod
-    def _extract_zip(source: Path, destination: Path) -> None:
-        with zipfile.ZipFile(source) as archive:
-            for member in archive.infolist():
-                path = destination / member.filename
-                if member.is_dir():
-                    continue
-                if path.is_absolute() or ".." in Path(member.filename).parts:
-                    raise ValueError("ZIP source contains an unsafe path")
-                path.parent.mkdir(parents=True, exist_ok=True)
-                with archive.open(member) as input_file, path.open("wb") as output_file:
-                    output_file.write(input_file.read())
-
-
-class _NoopDirectory:
-    def __init__(self, path: Path) -> None:
-        self.path = path
-
-    def __enter__(self) -> Path:
-        return self.path
-
-    def __exit__(self, *_args) -> None:
-        return None
-
-
-def _source_hash(root: Path) -> str:
-    digest = hashlib.sha256()
-    for path in sorted((item for item in root.rglob("*") if item.is_file()), key=lambda item: item.as_posix()):
-        relative = path.relative_to(root).as_posix()
-        digest.update(relative.encode("utf-8"))
-        digest.update(b"\0")
-        digest.update(path.read_bytes())
-        digest.update(b"\0")
-    return f"sha256:{digest.hexdigest()}"
-
 
 def _snapshot_findings(snapshot: SkillSnapshot) -> list[Finding]:
     findings: list[Finding] = []

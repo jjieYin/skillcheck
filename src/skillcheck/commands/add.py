@@ -6,9 +6,6 @@ from typing import Annotated
 import typer
 
 from skillcheck.config import load_or_create_config
-from skillcheck.models import Decision
-from skillcheck.pipelines.add_pipeline import AddRequest
-from skillcheck.pipelines.scan_pipeline import ReviewMode
 
 
 def build_add_pipeline(config: Path | None):
@@ -29,45 +26,44 @@ def _target_root(provider: str, config) -> Path:
     return (Path.home() / f".{normalized}" / leaf).resolve()
 
 
+def _render_prepared(prepared) -> None:
+    typer.echo(f"来源哈希：{prepared.source_hash}")
+    typer.echo(f"Agent 建议状态：{prepared.review_state}")
+    typer.echo(f"目标路径：{', '.join(str(path) for path in prepared.target_paths)}")
+    typer.echo(f"文件数量：{len(prepared.files)}")
+    if prepared.deterministic_blockers:
+        rule_ids = ", ".join(item.rule_id for item in prepared.deterministic_blockers)
+        typer.echo(f"确定性阻断项：{rule_ids}")
+    else:
+        typer.echo("确定性阻断项：无")
+
+
 def register(app: typer.Typer) -> None:
     @app.command("add")
     def add(
         source: Annotated[str, typer.Argument(help="目录、ZIP 或 GitHub URL")],
         target: Annotated[list[str] | None, typer.Option("--target", "-t")] = None,
-        review: Annotated[ReviewMode, typer.Option("--review")] = ReviewMode.NONE,
-        check_only: Annotated[bool, typer.Option("--check-only")] = False,
-        yes: Annotated[bool, typer.Option("--yes")] = False,
+        yes: Annotated[bool, typer.Option("--yes", help="确认后直接安装")] = False,
         config: Annotated[Path | None, typer.Option("--config")] = None,
     ) -> None:
-        pipeline = build_add_pipeline(config)
-        configuration = getattr(pipeline, "config", None)
-        if configuration is None:
-            configuration = load_or_create_config(config)
-        targets = target or ["codex"]
-        request = AddRequest(
-            source=source,
-            targets=targets,
-            target_paths=[_target_root(item, configuration) for item in targets],
-            review=review.value,
-            confirmed=False,
-        )
-        prepared = pipeline.prepare(request)
-        typer.echo(f"检查结论：{prepared.report.decision.value}")
-        typer.echo(f"来源哈希：{prepared.report.source_hash}")
-        if getattr(prepared, "paths", None) is not None:
-            typer.echo(f"报告：{prepared.paths.markdown}")
-        if getattr(prepared, "agent_review", None) is not None:
-            typer.echo(f"Agent 复核：{prepared.agent_review.status.value}")
-            if prepared.agent_review.error:
-                typer.echo(f"复核提示：{prepared.agent_review.error}")
-        if check_only:
-            return
-        if prepared.report.decision not in {Decision.PASS, Decision.APPROVE, Decision.VARIANT, Decision.MODIFY}:
-            raise typer.BadParameter(f"当前结论不能直接安装：{prepared.report.decision.value}")
-        confirmed = yes or typer.confirm(f"确认安装到 {', '.join(str(path) for path in request.target_paths)}？")
-        if not confirmed:
-            typer.echo("已保留报告，未安装。")
-            return
-        installed = pipeline.execute(prepared)
-        for path in installed:
-            typer.echo(f"已安装：{path}")
+        try:
+            pipeline = build_add_pipeline(config)
+            configuration = getattr(pipeline, "config", None) or load_or_create_config(config)
+            targets = target or ["codex"]
+            target_paths = [_target_root(item, configuration) for item in targets]
+            prepared = pipeline.prepare(source, targets, target_paths)
+            _render_prepared(prepared)
+            if prepared.deterministic_blockers:
+                raise typer.BadParameter("来源存在确定性安全阻断项，未安装")
+            confirmed = yes or typer.confirm("确认安装到以上目标路径？")
+            if not confirmed:
+                typer.echo("已保留预检结果，未安装。")
+                return
+            result = pipeline.execute(prepared, confirmed=True)
+            for path in result.installed_paths:
+                typer.echo(f"已安装：{path}")
+        except typer.Exit:
+            raise
+        except (OSError, RuntimeError, ValueError) as exc:
+            typer.echo(f"add failed: {exc}", err=True)
+            raise typer.Exit(code=2) from exc

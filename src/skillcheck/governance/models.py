@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from enum import StrEnum
 
 from pydantic import BaseModel, Field
@@ -73,3 +74,14 @@ class EvidencePage(BaseModel):
     members: list[EvidenceSkill]
     shared_capabilities: list[str]
     different_capabilities: list[str]
+
+
+class SourcePreflight(BaseModel):
+    """The bounded, local evidence associated with a staged installation source."""
+
+    run_id: str
+    source: str
+    source_hash: str
+    created_at: datetime
+    expires_at: datetime
+    deterministic_blockers: list[Finding] = Field(default_factory=list)

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from uuid import uuid4
 
 from skillcheck.installation.manifest import plan_from_report
 from skillcheck.models import CheckReport, InstallationPlan
@@ -15,6 +17,33 @@ class InstallationPlanner:
 
     def create(self, report: CheckReport, *, targets: list[str], target_paths: list[Path]) -> InstallationPlan:
         return plan_from_report(report, targets=targets, target_paths=target_paths)
+
+    @staticmethod
+    def source_hash(root: Path) -> str:
+        from skillcheck.parser import content_hash
+
+        return content_hash(root)
+
+    def create_controlled(
+        self,
+        *,
+        source: str,
+        source_hash: str,
+        targets: list[str],
+        target_paths: list[Path],
+    ) -> InstallationPlan:
+        now = datetime.now(UTC)
+        return InstallationPlan(
+            plan_id=f"plan-{uuid4().hex}",
+            source=source,
+            source_hash=source_hash,
+            decision="PASS",
+            targets=targets,
+            target_paths=target_paths,
+            created_at=now,
+            expires_at=now + timedelta(minutes=15),
+            approval_token=uuid4().hex,
+        )
 
     def validate(self, plan: InstallationPlan, *, approval_token: str) -> None:
         from datetime import UTC, datetime

@@ -7,6 +7,7 @@ from skillcheck.governance.models import (
     EvidencePage,
     EvidenceSkill,
     Relation,
+    SourcePreflight,
 )
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "EvidenceSkill",
     "GovernanceAnalyzer",
     "Relation",
+    "SourcePreflight",
 ]

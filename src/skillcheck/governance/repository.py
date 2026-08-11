@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from skillcheck.catalog.models import SkillSnapshot
 from skillcheck.catalog.repository import CatalogRepository
-from skillcheck.governance.models import CandidateGroupSummary
+from skillcheck.governance.models import CandidateGroupSummary, SourcePreflight
 from skillcheck.models.audit import Finding
 
 if TYPE_CHECKING:
@@ -89,6 +89,57 @@ class GovernanceRepository:
             except Exception:
                 connection.rollback()
                 raise
+
+    def save_source_preflight(self, preflight: SourcePreflight) -> None:
+        """Store local source evidence for the exact bytes that were analyzed."""
+        with self.catalog.database.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO source_preflights(preflight_id, source, status, result_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    preflight.run_id,
+                    preflight.source,
+                    "blocked" if preflight.deterministic_blockers else "complete",
+                    json.dumps(preflight.model_dump(mode="json"), ensure_ascii=False),
+                    preflight.created_at.isoformat(),
+                ),
+            )
+
+    def get_source_preflight(self, run_id: str) -> SourcePreflight:
+        with self.catalog.database.connect() as connection:
+            row = connection.execute(
+                "SELECT result_json FROM source_preflights WHERE preflight_id = ?", (run_id,)
+            ).fetchone()
+        if row is None:
+            raise ValueError(f"unknown source preflight: {run_id}")
+        return SourcePreflight.model_validate_json(row["result_json"])
+
+    def latest_source_preflight(self, source_hash: str) -> SourcePreflight | None:
+        with self.catalog.database.connect() as connection:
+            rows = connection.execute(
+                "SELECT result_json FROM source_preflights ORDER BY created_at DESC, preflight_id DESC"
+            ).fetchall()
+        for row in rows:
+            preflight = SourcePreflight.model_validate_json(row["result_json"])
+            if preflight.source_hash == source_hash:
+                return preflight
+        return None
+
+    def has_agent_review(self, run_id: str) -> bool:
+        with self.catalog.database.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT 1
+                FROM agent_reviews
+                JOIN candidate_groups ON candidate_groups.group_id = agent_reviews.group_id
+                WHERE candidate_groups.run_id = ?
+                LIMIT 1
+                """,
+                (run_id,),
+            ).fetchone()
+        return row is not None
 
     def evidence_members(self, run_id: str, group_id: str) -> tuple[str, list[SkillSnapshot]]:
         stored_group_id = _stored_group_id(run_id, group_id)
