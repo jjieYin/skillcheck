@@ -68,6 +68,8 @@ jobs:
           if (( doctor_code > 1 )); then
             exit "$doctor_code"
           fi
+          # MCP is a long-running stdio service: a startup timeout is the smoke check.
+          timeout 5 "$executable" serve --mcp || test "$?" -eq 124
 
       - name: Stage asset and manifest
         shell: bash

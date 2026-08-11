@@ -1,27 +1,5 @@
 # 快速开始
 
-`skillcheck` 面向个人本地 Skills 库，帮助发现重复、边界重叠、环境变体和安全问题。
+安装后运行 `skillcheck install`，选择要接入的 Codex、Claude Code 或 Cursor；再运行 `skillcheck init` 建立个人 Skills 索引。之后日常使用发生在 Agent 对话里，而不是复杂的命令行参数中。
 
-## Windows 安装
-
-```powershell
-irm https://raw.githubusercontent.com/jjieYin/skillcheck/main/install.ps1 | iex
-```
-
-安装后直接运行：
-
-```powershell
-skillcheck
-skillcheck scan
-skillcheck add .\path\to\new-skill --check-only
-```
-
-首次扫描会自动发现 Codex、Claude Code、Cursor 和 Agents 常见目录，并生成 Markdown/JSON 报告。
-
-## 开发安装
-
-```powershell
-python -m pip install -e ".[dev]"
-skillcheck version
-```
-
+没有 Agent 时，`skillcheck scan` 仍会更新索引并给出本地确定性检查结果。

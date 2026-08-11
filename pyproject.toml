@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "skillcheck"
-version = "0.3.1"
-description = "Local-first Skill inventory, audit, and preflight checker"
+version = "0.4.0"
+description = "Personal Skill governance with Agent-native semantic review"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
