@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import re
+import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Annotated
@@ -35,6 +37,28 @@ def _safe_report(report):
             ]
         }
     )
+
+
+def _latest_sync_warning(path: Path) -> str | None:
+    """Read the newest catalog warning without creating or modifying a database."""
+
+    try:
+        if not path.is_file() or path.stat().st_size == 0:
+            return None
+        uri = f"{path.resolve().as_uri()}?mode=ro"
+        with sqlite3.connect(uri, uri=True) as connection:
+            row = connection.execute(
+                "SELECT warnings_json FROM sync_events ORDER BY completed_at DESC, event_id DESC LIMIT 1"
+            ).fetchone()
+        if row is None:
+            return None
+        payload = json.loads(row[0])
+        if isinstance(payload, list):
+            warnings = [str(item) for item in payload if str(item).strip()]
+            return "; ".join(warnings) or None
+        return str(payload).strip() or None
+    except (OSError, sqlite3.Error, TypeError, ValueError, json.JSONDecodeError):
+        return None
 
 
 def build_doctor_context(config_path: Path | None):
@@ -74,6 +98,7 @@ def build_doctor_context(config_path: Path | None):
         config_path=path,
         index_path=config.catalog.database_path,
         reports_path=config.reports.directory,
+        catalog_sync_warning=_latest_sync_warning(config.catalog.database_path),
         registry=pipeline.registry,
         rewrite_skillcheck_integration=rewrite,
         initialize_empty_catalog=initialize_catalog,

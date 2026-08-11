@@ -114,11 +114,26 @@ class Doctor:
 
     def _catalog_integrity(self):
         path = Path(getattr(self.context, "index_path", "index.db"))
-        if not path.exists():
-            return self._check("catalog.integrity", True, "No catalog exists yet")
-        if path.stat().st_size == 0:
+        try:
+            exists = path.exists()
+            size = path.stat().st_size if exists else 0
+        except OSError:
             return self._check(
-                "catalog.integrity", False, "Catalog is empty", "Run skillcheck init to create a v0.4 catalog."
+                "catalog.integrity",
+                False,
+                "Catalog cannot be inspected",
+                "Check catalog file permissions, then run skillcheck init again.",
+                error=True,
+            )
+        if not exists:
+            return self._check("catalog.integrity", True, "No catalog exists yet")
+        if size == 0:
+            return self._check(
+                "catalog.integrity",
+                False,
+                "Catalog is empty",
+                "Run skillcheck init to create a v0.4 catalog.",
+                error=True,
             )
         try:
             uri = f"{path.resolve().as_uri()}?mode=ro"
@@ -143,7 +158,13 @@ class Doctor:
                 )
         except (sqlite3.Error, OSError):
             valid = False
-        return self._check("catalog.integrity", valid, "Catalog integrity is valid", "Keep the existing file for backup, then run skillcheck init again.", error=not valid)
+        return self._check(
+            "catalog.integrity",
+            valid,
+            "Catalog integrity is valid" if valid else "Catalog is incomplete or incompatible",
+            "Keep the existing file for backup, then run skillcheck init again.",
+            error=not valid,
+        )
 
     def _catalog_sync(self):
         warning = getattr(self.context, "catalog_sync_warning", None)

@@ -7,7 +7,8 @@ from typer.testing import CliRunner
 
 from skillcheck.app.main import app
 from skillcheck.catalog.database import CatalogDatabase
-from skillcheck.config import load_config
+from skillcheck.commands.doctor import build_doctor_context
+from skillcheck.config import AppConfig, load_config, save_config
 from skillcheck.lifecycle.doctor import CheckStatus, DoctorCheck, DoctorReport
 
 runner = CliRunner()
@@ -57,3 +58,31 @@ def test_doctor_fix_initializes_a_real_catalog_only_after_confirmation(monkeypat
     config = load_config(config_path, create=False)
     assert config.catalog.initialized is True
     assert CatalogDatabase(config.catalog.database_path).schema_version() == 4
+
+
+def test_doctor_context_reads_latest_sync_warning_without_writing_catalog(monkeypatch, tmp_path: Path) -> None:
+    state = tmp_path / "state"
+    config_path = state / "config.yaml"
+    config = AppConfig.default(home=tmp_path / "home")
+    config.catalog.database_path = state / "index.db"
+    config.catalog.initialized = True
+    save_config(config_path, config)
+    database = CatalogDatabase(config.catalog.database_path)
+    database.initialize()
+    with database.connect() as connection:
+        connection.execute(
+            """INSERT INTO sync_events
+            (event_id, revision, started_at, completed_at, added, updated, removed, invalid, warnings_json)
+            VALUES ('sync-1', 'revision-1', '2026-08-11T00:00:00+00:00',
+                    '2026-08-11T00:01:00+00:00', 0, 0, 0, 0, '[\"unreadable root\"]')"""
+        )
+    before = config.catalog.database_path.read_bytes()
+    monkeypatch.setattr(
+        "skillcheck.commands.doctor._build_install_pipeline",
+        lambda _config: SimpleNamespace(registry=SimpleNamespace(detect_all=list)),
+    )
+
+    context = build_doctor_context(config_path)
+
+    assert context.catalog_sync_warning == "unreadable root"
+    assert config.catalog.database_path.read_bytes() == before
