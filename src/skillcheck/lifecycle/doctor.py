@@ -12,7 +12,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from skillcheck.catalog.database import CatalogDatabase, IncompatibleCatalogError
+from skillcheck.catalog.database import CatalogDatabase
 
 
 class CheckStatus(StrEnum):
@@ -116,11 +116,19 @@ class Doctor:
         path = Path(getattr(self.context, "index_path", "index.db"))
         if not path.exists():
             return self._check("catalog.integrity", True, "No catalog exists yet")
+        if path.stat().st_size == 0:
+            return self._check(
+                "catalog.integrity", False, "Catalog is empty", "Run skillcheck init to create a v0.4 catalog."
+            )
         try:
-            CatalogDatabase(path).initialize()
-            with sqlite3.connect(path) as connection:
-                valid = connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
-        except (sqlite3.Error, IncompatibleCatalogError):
+            uri = f"{path.resolve().as_uri()}?mode=ro"
+            with sqlite3.connect(uri, uri=True) as connection:
+                integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
+                schema = connection.execute(
+                    "SELECT value FROM schema_meta WHERE key = 'schema_version'"
+                ).fetchone()
+                valid = integrity == "ok" and schema is not None and schema[0] == "4"
+        except (sqlite3.Error, OSError):
             valid = False
         return self._check("catalog.integrity", valid, "Catalog integrity is valid", "Keep the existing file for backup, then run skillcheck init again.", error=not valid)
 
