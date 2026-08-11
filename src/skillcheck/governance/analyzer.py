@@ -90,10 +90,13 @@ class GovernanceAnalyzer:
             raise ValueError("source analysis requires a staged local directory or ZIP file")
         return self.analyze_source(source, limit=limit)
 
-    def analyze_library(self, *, scope: str = "all", limit: int = 20) -> AnalyzeResult:
-        self._validate_limit(limit)
+    def analyze_library(self, *, scope: str = "all", limit: int | None = 20) -> AnalyzeResult:
         stale = self._sync_and_stale([])
         snapshots = self.catalog.list_current_skills()
+        if limit is None:
+            limit = max(1, len(snapshots))
+        else:
+            self._validate_limit(limit)
         return self._analyze(AnalyzeMode.LIBRARY, snapshots, self._revision(), stale, limit)
 
     def analyze_source(

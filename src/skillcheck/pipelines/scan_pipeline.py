@@ -46,7 +46,10 @@ class ScanPipeline:
 
     def run(self, paths: list[Path] | None = None) -> LocalScanResult:
         summary = self.sync.run(paths=paths or None)
-        analysis = self.analyzer.analyze_library(limit=20)
+        # A local scan is the full-library fallback.  Limiting it to the
+        # evidence page size would silently leave most duplicate candidates
+        # unaudited (for example, a 169-Skill catalog would report only 20).
+        analysis = self.analyzer.analyze_library(limit=None)
         report = LibraryAuditReport(
             report_id=make_audit_report_id(analysis.run_id, [group.group_id for group in analysis.groups]),
             scope="local catalog",
