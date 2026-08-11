@@ -25,7 +25,7 @@ def build_uninstall_context():
     layout = LocalUpgradeLayout()
     program_root = layout.root.expanduser().resolve(strict=False)
 
-    def remove_paths(paths) -> RemovalOutcome:
+    def remove_paths(paths, *, path_entry: Path | None = None) -> RemovalOutcome:
         removed: list[str] = []
         scheduled: list[str] = []
         for raw in paths:
@@ -41,9 +41,14 @@ def build_uninstall_context():
                 locked = isinstance(error, PermissionError) or getattr(error, "winerror", None) in {5, 32}
                 if os.name != "nt" or not locked:
                     raise
-                _schedule_windows_removal(path)
+                _schedule_windows_removal(path, path_entry)
                 scheduled.append(str(path))
+        if path_entry is not None and os.name == "nt" and not scheduled:
+            _remove_windows_user_path_entry(path_entry)
         return RemovalOutcome(removed=removed, scheduled=scheduled)
+
+    def remove_program(paths) -> RemovalOutcome:
+        return remove_paths(paths, path_entry=program_root / "bin")
 
     def remove_data(plan) -> RemovalOutcome:
         del plan
@@ -57,23 +62,62 @@ def build_uninstall_context():
             owned_data_paths=lambda: [data_root],
             owned_roots=lambda: [program_root, data_root],
         ),
-        helpers=SimpleNamespace(remove_program_after_exit=remove_paths),
+        helpers=SimpleNamespace(remove_program_after_exit=remove_program),
         data=SimpleNamespace(remove_selected=remove_data),
     )
 
 
-def _schedule_windows_removal(path: Path) -> None:
+def _schedule_windows_removal(path: Path, path_entry: Path | None = None) -> None:
     """Remove a locked portable-install directory after this executable exits."""
 
-    literal = str(path.resolve(strict=False)).replace("'", "''")
-    command = (
-        "Start-Sleep -Seconds 1; "
-        f"Remove-Item -LiteralPath '{literal}' -Recurse -Force -ErrorAction Stop"
-    )
+    command = _windows_removal_command(path, path_entry)
     subprocess.Popen(
         ["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", command],
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
+
+
+def _remove_windows_user_path_entry(path_entry: Path) -> None:
+    """Remove only Skillcheck's portable launcher directory from the User PATH."""
+
+    subprocess.run(
+        [
+            "powershell",
+            "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle",
+            "Hidden",
+            "-Command",
+            _windows_path_cleanup_command(path_entry),
+        ],
+        check=True,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+
+
+def _windows_removal_command(path: Path, path_entry: Path | None) -> str:
+    literal = _powershell_literal(path)
+    command = (
+        "Start-Sleep -Seconds 1; "
+        f"if (Test-Path -LiteralPath '{literal}') {{ "
+        f"Remove-Item -LiteralPath '{literal}' -Recurse -Force -ErrorAction Stop }}"
+    )
+    return f"{command}; {_windows_path_cleanup_command(path_entry)}" if path_entry else command
+
+
+def _windows_path_cleanup_command(path_entry: Path) -> str:
+    literal = _powershell_literal(path_entry)
+    return (
+        f"$pathEntry = '{literal}'; "
+        "$userPath = [Environment]::GetEnvironmentVariable('Path', 'User'); "
+        "$parts = @($userPath -split ';' | Where-Object { $_ -and "
+        "$_.TrimEnd('\\') -ine $pathEntry.TrimEnd('\\') }); "
+        "[Environment]::SetEnvironmentVariable('Path', ($parts -join ';'), 'User')"
+    )
+
+
+def _powershell_literal(path: Path) -> str:
+    return str(path.resolve(strict=False)).replace("'", "''")
 
 
 def register(app: typer.Typer) -> None:

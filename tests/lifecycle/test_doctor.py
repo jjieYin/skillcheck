@@ -69,3 +69,22 @@ def test_doctor_rejects_schema_marker_without_complete_v4_catalog(tmp_path: Path
     integrity = next(item for item in report.checks if item.code == "catalog.integrity")
     assert integrity.status.value == "error"
     assert index.read_bytes() == before
+
+
+def test_doctor_reports_catalog_sync_warning_with_a_failure_message(tmp_path: Path) -> None:
+    context = SimpleNamespace(
+        python_version=(3, 11, 0),
+        path_shadowing=False,
+        config=SimpleNamespace(schema_version=4, catalog=SimpleNamespace(initialized=False)),
+        index_path=tmp_path / "index.db",
+        reports_path=tmp_path,
+        registry=None,
+        mcp_available=True,
+        catalog_sync_warning="unreadable root",
+    )
+
+    report = Doctor(context).run()
+
+    sync = next(item for item in report.checks if item.code == "catalog.sync")
+    assert sync.status.value == "warning"
+    assert sync.message == "Catalog sync warning: unreadable root"

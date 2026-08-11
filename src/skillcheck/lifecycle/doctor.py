@@ -168,7 +168,20 @@ class Doctor:
 
     def _catalog_sync(self):
         warning = getattr(self.context, "catalog_sync_warning", None)
-        return self._check("catalog.sync", not warning, "Catalog has no recorded sync warning", "Run skillcheck init again after resolving the reported root issue.")
+        if warning:
+            summary = " ".join(str(warning).split())[:300]
+            return self._check(
+                "catalog.sync",
+                False,
+                f"Catalog sync warning: {summary}",
+                "Resolve the reported root issue, then run skillcheck init again.",
+            )
+        return self._check(
+            "catalog.sync",
+            True,
+            "Catalog has no recorded sync warning",
+            "Run skillcheck init again after resolving the reported root issue.",
+        )
 
     def _detections(self):
         registry = getattr(self.context, "registry", None)
