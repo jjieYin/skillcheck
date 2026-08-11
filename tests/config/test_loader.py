@@ -42,3 +42,14 @@ def test_legacy_fields_are_rejected(tmp_path) -> None:
 
     with pytest.raises(ValueError, match="unsupported fields"):
         load_config(path, home=tmp_path)
+
+
+def test_unknown_nested_v4_field_is_rejected_without_rewriting_source(tmp_path) -> None:
+    path = tmp_path / "config.yaml"
+    original = "schema_version: 4\ncatalog:\n  databasepath: unexpected\n"
+    path.write_text(original, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="catalog.databasepath"):
+        load_config(path, home=tmp_path)
+
+    assert path.read_text(encoding="utf-8") == original

@@ -11,9 +11,14 @@
 
 ## Verification
 
-- `python -m pytest tests/architecture/test_no_legacy_review.py tests/config/test_loader.py -q` — 4 passed.
-- `python -m pytest -q` — 206 passed, 2 skipped.
+- `python -m pytest tests/architecture/test_no_legacy_review.py tests/config/test_loader.py -q` — 5 passed.
+- `python -m pytest -q` — 208 passed, 2 skipped.
 - `python -m ruff check src tests` — passed.
+
+## Review follow-up
+
+- Made every nested configuration section strict, so typos such as `catalog.databasepath` are rejected without rewriting the user's source configuration.
+- Removed unused legacy report renderers that only referenced the deleted `ReportDocument` and pre-v0.4 Agent review report shape.
 
 ## Note
 

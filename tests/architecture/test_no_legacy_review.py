@@ -7,6 +7,7 @@ FORBIDDEN = (
     "CodexReviewAdapter",
     "ClaudeReviewAdapter",
     "LLMConfig",
+    "skillcheck.reports.builder",
 )
 
 

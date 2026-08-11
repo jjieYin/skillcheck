@@ -28,20 +28,24 @@ def unique_paths(paths: list[Path]) -> list[Path]:
     return result
 
 
-class EmbeddingConfig(BaseModel):
+class StrictConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class EmbeddingConfig(StrictConfig):
     backend: str = "hash"
     model_id: str = "hash-v1"
     dimensions: int = 256
     local_model: str | None = None
 
 
-class SecurityConfig(BaseModel):
+class SecurityConfig(StrictConfig):
     enabled: bool = True
     skill_spector_command: str | None = None
     timeout_seconds: int = 30
 
 
-class ThresholdConfig(BaseModel):
+class ThresholdConfig(StrictConfig):
     top_k: int = 5
     duplicate_similarity: float = 0.98
     overlap_similarity: float = 0.86
@@ -49,23 +53,23 @@ class ThresholdConfig(BaseModel):
     conflict_similarity: float = 0.80
 
 
-class TargetConfig(BaseModel):
+class TargetConfig(StrictConfig):
     configured: list[str] = Field(default_factory=list)
     scope: Literal["global", "project"] = "global"
     last_validated: bool = False
 
 
-class ReportsConfig(BaseModel):
+class ReportsConfig(StrictConfig):
     directory: Path = Field(default_factory=lambda: app_home() / "reports")
     formats: list[str] = Field(default_factory=lambda: ["markdown", "json"])
 
 
-class PrivacyConfig(BaseModel):
+class PrivacyConfig(StrictConfig):
     redact_secrets: bool = True
     include_body_excerpts: bool = True
 
 
-class CatalogConfig(BaseModel):
+class CatalogConfig(StrictConfig):
     initialized: bool = False
     roots: list[Path] = Field(default_factory=list)
     database_path: Path = Field(default_factory=lambda: app_home() / "index.db")
@@ -74,10 +78,8 @@ class CatalogConfig(BaseModel):
     reconcile_before_query: bool = True
 
 
-class AppConfig(BaseModel):
+class AppConfig(StrictConfig):
     """Strict, migration-free configuration for the v0.4 catalog."""
-
-    model_config = ConfigDict(extra="forbid")
 
     schema_version: Literal[4] = 4
     catalog: CatalogConfig
