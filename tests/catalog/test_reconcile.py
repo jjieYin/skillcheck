@@ -48,6 +48,24 @@ def test_reconcile_adds_then_updates_a_skill_snapshot(tmp_path: Path) -> None:
     assert len(repository.list_snapshots(current.skill_id)) == 2
 
 
+def test_reconcile_discovers_skills_at_arbitrary_depth(tmp_path: Path) -> None:
+    root = _root(tmp_path)
+    nested = root.path / "prd-ux-code" / "opt" / "visual" / "deep-skill"
+    nested.mkdir(parents=True)
+    (nested / "SKILL.md").write_text(
+        "---\nname: deep-skill\ndescription: nested\n---\nBody\n",
+        encoding="utf-8",
+    )
+    repository, reconciler = _reconciler(tmp_path)
+
+    summary = reconciler.reconcile([root])
+
+    assert summary.added == 1
+    skills = repository.list_current_skills()
+    assert len(skills) == 1
+    assert skills[0].relative_path == "prd-ux-code/opt/visual/deep-skill/SKILL.md"
+
+
 def test_reconcile_marks_deleted_skill_missing_without_deleting_history(tmp_path: Path) -> None:
     root = _root(tmp_path)
     path = _write_skill(root)
