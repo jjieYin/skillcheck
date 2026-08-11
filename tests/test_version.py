@@ -3,7 +3,7 @@ from pathlib import Path
 
 from skillcheck import __version__
 
-EXPECTED_RELEASE_VERSION = "0.4.0"
+EXPECTED_RELEASE_VERSION = "0.4.1"
 
 
 def test_source_and_project_versions_match_v040_release() -> None:
