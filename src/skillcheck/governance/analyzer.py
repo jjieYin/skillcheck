@@ -15,6 +15,7 @@ from skillcheck.catalog.models import LibraryRoot, RootScope, SkillSnapshot, Ski
 from skillcheck.catalog.repository import CatalogRepository
 from skillcheck.core.audit import LibraryAuditor
 from skillcheck.core.parser import SkillParseError, content_hash, parse_skill
+from skillcheck.core.validators import BuiltinValidator
 from skillcheck.mcp.runtime import McpRuntime
 from skillcheck.models import Finding, Severity, SkillRecord
 from skillcheck.sources import SourceLimits, stage_source
@@ -123,12 +124,7 @@ class GovernanceAnalyzer:
                     source_hash=source_hash,
                     created_at=created_at,
                     expires_at=created_at + timedelta(minutes=15),
-                    deterministic_blockers=[
-                        finding
-                        for snapshot in source_snapshots
-                        for finding in _snapshot_findings(snapshot)
-                        if finding.rule_id.startswith("SEC")
-                    ],
+                    deterministic_blockers=_source_security_findings(root),
                 )
             )
             return result
@@ -364,6 +360,25 @@ def _snapshot_findings(snapshot: SkillSnapshot) -> list[Finding]:
     if _CREDENTIAL.search(snapshot.body):
         findings.append(_finding("SEC002", Severity.HIGH, "Skill appears to contain a hardcoded credential."))
     return findings
+
+
+def _source_security_findings(root: Path) -> list[Finding]:
+    """Return every built-in deterministic security finding from the staged source."""
+
+    validator = BuiltinValidator()
+    findings: list[Finding] = []
+    for marker in sorted(root.rglob("SKILL.md"), key=lambda item: item.as_posix()):
+        try:
+            record = parse_skill(marker.parent)
+        except SkillParseError as exc:
+            findings.append(
+                _finding("SEC006", Severity.HIGH, f"Skill cannot be parsed safely: {exc}")
+            )
+            continue
+        findings.extend(
+            finding for finding in validator.scan(marker.parent, record) if finding.rule_id.startswith("SEC")
+        )
+    return list({(item.rule_id, item.message): item for item in findings}.values())
 
 
 def _finding(rule_id: str, severity: Severity, message: str) -> Finding:

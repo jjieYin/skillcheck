@@ -44,3 +44,21 @@ def test_github_redirects_are_disabled(monkeypatch, tmp_path: Path) -> None:
         pass
     assert "http.followRedirects=false" in observed["args"]
 
+
+def test_local_source_symlink_is_rejected(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "SKILL.md").write_text("---\nname: demo\n---\nbody", encoding="utf-8")
+    outside = tmp_path / "outside.txt"
+    outside.write_text("secret", encoding="utf-8")
+    link = source / "linked.txt"
+    try:
+        link.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    with pytest.raises(SourceSafetyError, match="symlink"):
+        stage_source(source, staging_parent=tmp_path / "staging")
+
+    staging = tmp_path / "staging"
+    assert not staging.exists() or list(staging.iterdir()) == []

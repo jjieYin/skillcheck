@@ -56,11 +56,20 @@ def stage_source(
     path = Path(source).expanduser()
     if not path.exists():
         raise SourceSafetyError(f"source does not exist: {source}")
+    if path.is_symlink():
+        raise SourceSafetyError("local source symlink is not allowed")
     if path.is_dir():
+        _reject_local_symlinks(path)
         return StagedSource(locator, path.resolve())
     if path.is_file() and path.suffix.casefold() == ".zip":
         return _stage_zip(locator, path.resolve(), limits, staging_parent)
     raise SourceSafetyError("source must be a directory, ZIP archive, or HTTPS GitHub URL")
+
+
+def _reject_local_symlinks(root: Path) -> None:
+    for item in root.rglob("*"):
+        if item.is_symlink():
+            raise SourceSafetyError(f"local source symlink is not allowed: {item}")
 
 
 def _stage_zip(

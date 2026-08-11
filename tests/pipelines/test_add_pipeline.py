@@ -35,6 +35,24 @@ def test_add_rejects_changed_source_after_agent_review(pipeline: AddPipeline, tm
         pipeline.execute(prepared, confirmed=True)
 
 
+def test_add_rejects_preflight_created_for_changed_source(
+    pipeline: AddPipeline, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = write_skill(tmp_path / "source", name="new-skill", body="Original safe body.")
+    analyze_source = pipeline.governance.analyze_source
+
+    def change_before_preflight(path: str, *, limit: int):
+        (source / "SKILL.md").write_text(
+            "---\nname: new-skill\n---\nChanged before preflight.", encoding="utf-8"
+        )
+        return analyze_source(path, limit=limit)
+
+    monkeypatch.setattr(pipeline.governance, "analyze_source", change_before_preflight)
+
+    with pytest.raises(ValueError, match="预检结果与当前来源不一致"):
+        pipeline.prepare(str(source), ["codex"], [tmp_path / "installed"])
+
+
 def test_add_without_confirmation_writes_nothing(pipeline: AddPipeline, tmp_path: Path) -> None:
     source = write_skill(tmp_path / "source", name="new-skill", body="A safe skill body with enough detail.")
 

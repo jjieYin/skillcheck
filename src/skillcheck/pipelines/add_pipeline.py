@@ -55,6 +55,8 @@ class AddPipeline:
         if preflight is None:
             result = self.governance.analyze_source(source, limit=20)
             preflight = self.governance.repository.get_source_preflight(result.run_id)
+        if preflight.source_hash != source_hash:
+            raise ValueError("预检结果与当前来源不一致，请重新执行 add")
         now = datetime.now(UTC)
         if preflight.expires_at <= now:
             review_state: Literal["reviewed", "local_only", "stale"] = "stale"
