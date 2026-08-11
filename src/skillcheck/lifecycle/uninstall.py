@@ -41,13 +41,14 @@ class UninstallManager:
             return UninstallResult(changed=False, cancelled=True, message="Cancelled; no files were changed.")
         changed = False
         scope = getattr(self.context, "agent_scope", "global")
-        for target in getattr(self.context, "targets", ()).configured():
-            result = target.uninstall(scope)
-            changed = bool(getattr(result, "changed", result)) or changed
-            remove_markers = getattr(target, "uninstall_instructions", None)
-            if callable(remove_markers):
-                marker = remove_markers(scope)
-                changed = bool(getattr(marker, "changed", marker)) or changed
+        if plan.remove_agent_configs:
+            for target in getattr(self.context, "targets", ()).configured():
+                result = target.uninstall(scope)
+                changed = bool(getattr(result, "changed", result)) or changed
+                remove_markers = getattr(target, "uninstall_instructions", None)
+                if callable(remove_markers):
+                    marker = remove_markers(scope)
+                    changed = bool(getattr(marker, "changed", marker)) or changed
         if plan.remove_program:
             self.context.helpers.remove_program_after_exit(plan.exact_paths)
             changed = True
@@ -66,5 +67,5 @@ class UninstallManager:
             if any(char in str(path) for char in "*?[]"):
                 raise ValueError(f"uninstall path cannot contain wildcards: {path}")
             resolved = path.resolve()
-            if resolved in roots or (owned and not any(resolved == root or root in resolved.parents for root in owned)):
+            if resolved in roots or not owned or not any(resolved == root or root in resolved.parents for root in owned):
                 raise ValueError(f"uninstall path is outside Skillcheck-owned locations: {path}")

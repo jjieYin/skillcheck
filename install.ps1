@@ -50,8 +50,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "版本冒烟检查失败。" }
     & $executable doctor --json | Out-Null
     if ($LASTEXITCODE -gt 1) { throw "环境诊断冒烟检查失败。" }
-    & $executable setup --no-interactive | Out-Null
-    if ($LASTEXITCODE -gt 2) { throw "Agent setup 冒烟检查失败。" }
+    & $executable install --target auto --yes | Out-Null
+    if ($LASTEXITCODE -gt 2) { throw "Agent install 冒烟检查失败。" }
 
     New-Item -ItemType Directory -Force -Path $bin | Out-Null
     $shim = Join-Path $bin "skillcheck.cmd"

@@ -9,8 +9,9 @@ from typing import Annotated
 
 import typer
 
-from skillcheck.config import app_home
-from skillcheck.config.models import AppConfig
+from skillcheck.catalog.database import CatalogDatabase
+from skillcheck.commands.install import _build_install_pipeline
+from skillcheck.config import app_home, load_config
 from skillcheck.lifecycle.doctor import Doctor
 
 
@@ -38,14 +39,9 @@ def _safe_report(report):
 
 def build_doctor_context(config_path: Path | None):
     path = config_path.expanduser() if config_path else app_home() / "config.yaml"
-    config = None
-    if path.exists():
-        try:
-            import yaml
-
-            payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-            config = AppConfig.model_validate(payload)
-        except Exception as exc:  # noqa: BLE001 - diagnostics must report malformed configs
+    try:
+        config = load_config(path, create=False)
+    except Exception as exc:  # noqa: BLE001 - diagnostics must report malformed configs
             return SimpleNamespace(
                 config_path=path,
                 config_error=str(type(exc).__name__),
@@ -54,14 +50,24 @@ def build_doctor_context(config_path: Path | None):
                 targets_detected=False,
                 reviewer_available=False,
             )
-    if config is None:
-        config = AppConfig.default()
+    pipeline = _build_install_pipeline(config)
+
+    def rewrite() -> None:
+        selected = config.targets.configured
+        if not selected:
+            selected = [item.agent.value for item in pipeline.discover().agents if item.cli_path or item.config_path]
+        if selected:
+            preview = pipeline.preview(selected, scope=config.targets.scope)
+            pipeline.apply(preview, confirmed=True)
+
     return SimpleNamespace(
+        config=config,
         config_path=path,
         index_path=config.catalog.database_path,
         reports_path=config.reports.directory,
-        targets_detected=False,
-        reviewer_available=False,
+        registry=pipeline.registry,
+        rewrite_skillcheck_integration=rewrite,
+        initialize_empty_catalog=lambda: CatalogDatabase(config.catalog.database_path).initialize(),
     )
 
 
