@@ -13,7 +13,7 @@ import typer
 
 from skillcheck.commands.install import _build_install_pipeline
 from skillcheck.config import app_home, load_config
-from skillcheck.lifecycle.uninstall import UninstallManager
+from skillcheck.lifecycle.uninstall import RemovalOutcome, UninstallManager
 from skillcheck.lifecycle.upgrade import LocalUpgradeLayout
 
 
@@ -25,7 +25,7 @@ def build_uninstall_context():
     layout = LocalUpgradeLayout()
     program_root = layout.root.expanduser().resolve(strict=False)
 
-    def remove_paths(paths) -> list[str]:
+    def remove_paths(paths) -> RemovalOutcome:
         removed: list[str] = []
         scheduled: list[str] = []
         for raw in paths:
@@ -43,9 +43,9 @@ def build_uninstall_context():
                     raise
                 _schedule_windows_removal(path)
                 scheduled.append(str(path))
-        return SimpleNamespace(removed=removed, scheduled=scheduled)
+        return RemovalOutcome(removed=removed, scheduled=scheduled)
 
-    def remove_data(plan) -> list[str]:
+    def remove_data(plan) -> RemovalOutcome:
         del plan
         return remove_paths([data_root])
 

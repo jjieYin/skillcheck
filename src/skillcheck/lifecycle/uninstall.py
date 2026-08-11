@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,12 @@ class UninstallResult(BaseModel):
     cancelled: bool = False
     message: str = ""
     removed_paths: list[str] = Field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class RemovalOutcome:
+    removed: list[str]
+    scheduled: list[str]
 
 
 class UninstallManager:
@@ -58,7 +65,8 @@ class UninstallManager:
         scheduled_paths: list[str] = []
         scope = getattr(self.context, "agent_scope", "global")
         if plan.remove_agent_configs:
-            for target in getattr(self.context, "targets", ()).configured():
+            configured = getattr(getattr(self.context, "targets", None), "configured", None)
+            for target in configured() if callable(configured) else []:
                 result = target.uninstall(scope)
                 changed = bool(getattr(result, "changed", result)) or changed
                 remove_markers = getattr(target, "uninstall_instructions", None)
