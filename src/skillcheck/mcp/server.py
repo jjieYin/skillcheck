@@ -16,6 +16,7 @@ TOOL_NAMES = {
     "skillcheck_analyze",
     "skillcheck_evidence",
     "skillcheck_save_review",
+    "skillcheck_save_sync_group",
 }
 
 
@@ -44,6 +45,22 @@ def create_server(tools: SkillcheckMcpTools) -> FastMCP:
     @server.tool(name="skillcheck_save_review", description="Save the Agent's explicit governance decisions as a report.")
     def skillcheck_save_review(run_id: str, decisions: list[dict[str, Any]]) -> dict[str, object]:
         return tools.save_review(run_id, decisions)
+
+    @server.tool(
+        name="skillcheck_save_sync_group",
+        description="Save a user-confirmed monitor-only group for cross-Agent mirrored Skills; never copies or edits Skill files.",
+    )
+    def skillcheck_save_sync_group(
+        run_id: str,
+        group_id: str,
+        name: str,
+        authority_skill_id: str,
+        member_skill_ids: list[str],
+        policy: str = "monitor_only",
+    ) -> dict[str, object]:
+        return tools.save_sync_group(
+            run_id, group_id, name, authority_skill_id, member_skill_ids, policy
+        )
 
     return server
 

@@ -53,7 +53,10 @@ class SyncGroupService:
         authority_skill_id: str,
         member_skill_ids: list[str],
         baseline_revision: str,
+        policy: SyncPolicy = SyncPolicy.MONITOR_ONLY,
     ) -> SyncGroup:
+        if policy is not SyncPolicy.MONITOR_ONLY:
+            raise ValueError("sync group policy must be monitor_only")
         skill_ids = [authority_skill_id, *member_skill_ids]
         if len(skill_ids) < 2:
             raise ValueError("sync group must have at least two members")
@@ -69,7 +72,7 @@ class SyncGroupService:
             group_id=f"sync-{uuid4().hex}",
             name=name,
             authority_skill_id=authority_skill_id,
-            policy=SyncPolicy.MONITOR_ONLY,
+            policy=policy,
             baseline_revision=baseline_revision,
             status=SyncGroupStatus.IN_SYNC,
             members=[

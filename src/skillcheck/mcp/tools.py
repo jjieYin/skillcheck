@@ -7,8 +7,9 @@ from typing import Any
 from pydantic import TypeAdapter
 
 from skillcheck.governance.analyzer import GovernanceAnalyzer
-from skillcheck.governance.models import AnalyzeMode
-from skillcheck.governance.reviews import ReviewService
+from skillcheck.governance.models import AnalyzeMode, Relation, SyncPolicy
+from skillcheck.governance.reviews import ReviewService, StaleAnalysisError
+from skillcheck.governance.sync_groups import SyncGroupService
 from skillcheck.mcp.runtime import McpRuntime
 from skillcheck.models.governance import GroupDecision
 
@@ -72,6 +73,51 @@ class SkillcheckMcpTools:
         parsed = TypeAdapter(list[GroupDecision]).validate_python(decisions)
         result = self._review_service().save(run_id, parsed)
         return result.model_dump(mode="json")
+
+    def save_sync_group(
+        self,
+        run_id: str,
+        group_id: str,
+        name: str,
+        authority_skill_id: str,
+        member_skill_ids: list[str],
+        policy: str = "monitor_only",
+    ) -> dict[str, object]:
+        """Persist a user-confirmed, monitor-only group from current mirror evidence."""
+        if not all(isinstance(value, str) and value for value in (run_id, group_id, name, authority_skill_id)):
+            raise ValueError("run_id, group_id, name, and authority_skill_id are required")
+        if policy != SyncPolicy.MONITOR_ONLY.value:
+            raise ValueError("policy must be monitor_only")
+        if not isinstance(member_skill_ids, list) or not all(
+            isinstance(skill_id, str) and skill_id for skill_id in member_skill_ids
+        ):
+            raise ValueError("member_skill_ids must be a list of skill IDs")
+
+        repository = self._governance().repository
+        context = repository.review_context(run_id)
+        candidate = next((item for item in context.groups if item.group_id == group_id), None)
+        if candidate is None:
+            raise ValueError("group does not belong to analysis run")
+        if candidate.relation != Relation.MIRRORED_COPY.value:
+            raise ValueError("group must have MIRRORED_COPY relation")
+        requested_members = [authority_skill_id, *member_skill_ids]
+        if set(requested_members) != set(candidate.member_skill_ids) or len(requested_members) != len(
+            set(requested_members)
+        ):
+            raise ValueError("authority and member_skill_ids must match the analyzed group")
+        if authority_skill_id not in candidate.member_skill_ids:
+            raise ValueError("authority_skill_id must belong to the analyzed group")
+        if not context.is_current:
+            raise StaleAnalysisError("analysis snapshots have changed; analyze again before saving")
+
+        saved = SyncGroupService(repository).create(
+            name=name,
+            authority_skill_id=authority_skill_id,
+            member_skill_ids=member_skill_ids,
+            baseline_revision=context.revision,
+            policy=SyncPolicy.MONITOR_ONLY,
+        )
+        return saved.model_dump(mode="json")
 
     def _governance(self) -> GovernanceAnalyzer:
         if self._analyzer is None:

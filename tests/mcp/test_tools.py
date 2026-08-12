@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
 
+from skillcheck.catalog.database import CatalogDatabase
+from skillcheck.catalog.models import LibraryRoot, RootScope, SkillSnapshot
+from skillcheck.catalog.repository import CatalogRepository
+from skillcheck.governance import GovernanceAnalyzer, Relation
+from skillcheck.governance.reviews import StaleAnalysisError
 from skillcheck.governance.models import AnalyzeMode
 from skillcheck.mcp.tools import SkillcheckMcpTools
 from skillcheck.models.governance import GovernanceDecision, GroupDecision
@@ -37,6 +43,56 @@ def _tools() -> tuple[SkillcheckMcpTools, Analyzer, Reviews, list[str]]:
     reviews = Reviews()
     runtime = SimpleNamespace(before_query=lambda: calls.append("before_query"))
     return SkillcheckMcpTools(runtime, analyzer=analyzer, reviews=reviews), analyzer, reviews, calls
+
+
+def _snapshot(skill_id: str, root_id: str, content_hash: str) -> SkillSnapshot:
+    return SkillSnapshot(
+        snapshot_id=f"snapshot-{skill_id}-{content_hash.rsplit(':', 1)[-1]}",
+        skill_id=skill_id,
+        root_id=root_id,
+        relative_path=f"{skill_id}/SKILL.md",
+        name=skill_id,
+        description="An API review skill.",
+        body="Review API contracts and validate their request fields.",
+        content_hash=content_hash,
+        indexed_at=datetime(2026, 8, 12, tzinfo=UTC),
+    )
+
+
+@pytest.fixture
+def mirror_run(tmp_path):
+    database = CatalogDatabase(tmp_path / "catalog.db")
+    database.initialize()
+    catalog = CatalogRepository(database)
+    for root_id, provider in (("codex-root", "codex"), ("claude-root", "claude")):
+        catalog.upsert_root(
+            LibraryRoot(
+                root_id=root_id,
+                path=tmp_path / root_id,
+                provider=provider,
+                scope=RootScope.GLOBAL,
+            )
+        )
+    catalog.upsert_snapshot(_snapshot("codex-api", "codex-root", "sha256:mirror"))
+    catalog.upsert_snapshot(_snapshot("claude-api", "claude-root", "sha256:mirror"))
+    analyzer = GovernanceAnalyzer(catalog)
+    result = analyzer.analyze_library(limit=20)
+    group = next(group for group in result.groups if group.relation is Relation.MIRRORED_COPY)
+    return SimpleNamespace(catalog=catalog, result=result, group=group)
+
+
+@pytest.fixture
+def mcp_tools(mirror_run) -> SkillcheckMcpTools:
+    runtime = SimpleNamespace(repository=mirror_run.catalog)
+    return SkillcheckMcpTools(runtime, analyzer=GovernanceAnalyzer(mirror_run.catalog))
+
+
+@pytest.fixture
+def stale_mirror_run(mirror_run):
+    mirror_run.catalog.upsert_snapshot(
+        _snapshot("codex-api", "codex-root", "sha256:changed")
+    )
+    return SimpleNamespace(run_id=mirror_run.result.run_id, group_id=mirror_run.group.group_id)
 
 
 def test_analyze_validates_source_mode_and_returns_json() -> None:
@@ -82,3 +138,32 @@ def test_save_review_rejects_malformed_decisions_and_serializes_saved_review() -
     assert reviews.calls[0][1][0].decision is GovernanceDecision.MERGE
     with pytest.raises(ValueError):
         tools.save_review("run-1", [{"group_id": "missing-required-fields"}])
+
+
+def test_save_sync_group_persists_confirmed_mirror_baseline(mcp_tools, mirror_run) -> None:
+    saved = mcp_tools.save_sync_group(
+        run_id=mirror_run.result.run_id,
+        group_id=mirror_run.group.group_id,
+        name="api-review",
+        authority_skill_id="codex-api",
+        member_skill_ids=["claude-api"],
+        policy="monitor_only",
+    )
+
+    assert saved["name"] == "api-review"
+    assert saved["authority_skill_id"] == "codex-api"
+    assert saved["policy"] == "monitor_only"
+    assert [member["skill_id"] for member in saved["members"]] == ["codex-api", "claude-api"]
+    assert mirror_run.catalog.get_current_skill("codex-api").content_hash == "sha256:mirror"
+
+
+def test_save_sync_group_rejects_stale_analysis(mcp_tools, stale_mirror_run) -> None:
+    with pytest.raises(StaleAnalysisError):
+        mcp_tools.save_sync_group(
+            run_id=stale_mirror_run.run_id,
+            group_id=stale_mirror_run.group_id,
+            name="api-review",
+            authority_skill_id="codex-api",
+            member_skill_ids=["claude-api"],
+            policy="monitor_only",
+        )

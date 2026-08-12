@@ -8,16 +8,22 @@ import pytest
 from skillcheck.mcp.server import TOOL_NAMES, create_server, run_stdio
 
 
-def test_mcp_exposes_exactly_three_agent_native_tools() -> None:
+def test_mcp_exposes_exactly_four_agent_native_tools() -> None:
     assert TOOL_NAMES == {
         "skillcheck_analyze",
         "skillcheck_evidence",
         "skillcheck_save_review",
+        "skillcheck_save_sync_group",
     }
 
 
 def test_server_registers_exact_tool_names() -> None:
-    tools = SimpleNamespace(analyze=lambda *args: {}, evidence=lambda *args: {}, save_review=lambda *args: {})
+    tools = SimpleNamespace(
+        analyze=lambda *args: {},
+        evidence=lambda *args: {},
+        save_review=lambda *args: {},
+        save_sync_group=lambda *args: {},
+    )
     server = create_server(tools)
 
     registered = asyncio.run(server.list_tools())
