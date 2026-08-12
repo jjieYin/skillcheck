@@ -55,12 +55,21 @@ class ScanPipeline:
             scope="local catalog",
             installation_count=analysis.summary.skills_considered,
             unique_skill_count=analysis.summary.skills_considered,
+            exact_duplicates=analysis.summary.exact_duplicates,
+            mirrored_copy_groups=analysis.summary.mirrored_copy_groups,
+            sync_groups_total=analysis.summary.sync_groups_total,
+            sync_groups_drifted=analysis.summary.sync_groups_drifted,
             groups=[
                 AuditGroup(
                     group_id=group.group_id,
                     relation=group.relation.value,
                     member_skill_ids=group.member_skill_ids,
                     confidence=(f"{group.similarity:.3f}" if group.similarity is not None else "local-rule"),
+                    recommendations=(
+                        ["合理跨作用域分发；可选择建立只监测同步组"]
+                        if group.relation.value == "MIRRORED_COPY"
+                        else []
+                    ),
                 )
                 for group in analysis.groups
             ],

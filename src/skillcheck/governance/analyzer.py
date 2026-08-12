@@ -30,7 +30,7 @@ from .models import (
     Relation,
     SourcePreflight,
 )
-from .repository import GovernanceRepository
+from .repository import EvidenceMember, GovernanceRepository
 from .scopes import ScopeClassifier
 
 _PAGE_SIZE = 20
@@ -143,6 +143,7 @@ class GovernanceAnalyzer:
         self._sync_and_stale([])
         revision, members = self.repository.evidence_members(run_id, group_id)
         paths = self._member_paths(members)
+        snapshots = [member.snapshot for member in members]
         stale = any(_paths_overlap(pending, member) for pending in pending_before for member in paths)
         page_count = max(1, math.ceil(len(members) / _PAGE_SIZE))
         if page > page_count:
@@ -156,8 +157,8 @@ class GovernanceAnalyzer:
             page=page,
             page_count=page_count,
             members=[self._evidence_skill(item, include_body) for item in selected],
-            shared_capabilities=_shared_capabilities(members),
-            different_capabilities=_different_capabilities(members),
+            shared_capabilities=_shared_capabilities(snapshots),
+            different_capabilities=_different_capabilities(snapshots),
         )
 
     def _analyze(
@@ -202,7 +203,7 @@ class GovernanceAnalyzer:
             mode=mode,
             revision=revision,
             stale=stale,
-            summary=_summary(len(selected), groups),
+            summary=_summary(len(selected), groups, self._sync_groups()),
             groups=groups,
             deterministic_findings=audit.findings,
             next_tool="skillcheck_evidence" if groups else None,
@@ -313,15 +314,21 @@ class GovernanceAnalyzer:
             },
         )
 
-    def _member_paths(self, members: list[SkillSnapshot]) -> list[Path]:
-        roots = {root.root_id: root.path for root in self.catalog.list_roots()}
-        return [roots[item.root_id] / item.relative_path for item in members if item.root_id in roots]
+    @staticmethod
+    def _member_paths(members: list[EvidenceMember]) -> list[Path]:
+        return [Path(item.root_path) / item.snapshot.relative_path for item in members]
 
     @staticmethod
-    def _evidence_skill(snapshot: SkillSnapshot, include_body: bool) -> EvidenceSkill:
+    def _evidence_skill(member: EvidenceMember, include_body: bool) -> EvidenceSkill:
+        snapshot = member.snapshot
         body = _redact(snapshot.body[:_BODY_LIMIT]) if include_body else None
         return EvidenceSkill(
             skill_id=snapshot.skill_id,
+            snapshot_id=snapshot.snapshot_id,
+            provider=member.provider,
+            scope=member.scope,
+            project_path=member.project_path,
+            root_path=member.root_path,
             name=snapshot.name,
             description=snapshot.description,
             content_hash=snapshot.content_hash,
@@ -332,6 +339,12 @@ class GovernanceAnalyzer:
             outputs=snapshot.outputs,
             body=body,
         )
+
+    def _sync_groups(self):
+        """Refresh monitor-only groups before reporting their current drift state."""
+        from .sync_groups import SyncGroupService
+
+        return SyncGroupService(self.repository).list()
 
     def _sync_and_stale(self, paths: list[Path]) -> bool:
         if self.runtime is None:
@@ -395,13 +408,16 @@ def _finding(rule_id: str, severity: Severity, message: str) -> Finding:
     return Finding(rule_id=rule_id, severity=severity, message=message, remediation="Review the local Skill.")
 
 
-def _summary(skills_considered: int, groups: list[CandidateGroupSummary]) -> AnalyzeSummary:
+def _summary(skills_considered: int, groups: list[CandidateGroupSummary], sync_groups) -> AnalyzeSummary:
     counts = {relation: 0 for relation in Relation}
     for group in groups:
         counts[group.relation] += 1
     return AnalyzeSummary(
         skills_considered=skills_considered,
         exact_duplicates=counts[Relation.EXACT_DUPLICATE],
+        mirrored_copy_groups=counts[Relation.MIRRORED_COPY],
+        sync_groups_total=len(sync_groups),
+        sync_groups_drifted=sum(group.status.value == "DRIFTED" for group in sync_groups),
         overlap_candidates=counts[Relation.HIGH_OVERLAP_CANDIDATE],
         conflict_candidates=counts[Relation.CONFLICT_CANDIDATE],
         variant_candidates=counts[Relation.VARIANT_CANDIDATE],

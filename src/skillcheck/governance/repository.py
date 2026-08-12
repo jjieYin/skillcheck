@@ -39,6 +39,17 @@ class ReviewContext:
     is_current: bool
 
 
+@dataclass(frozen=True)
+class EvidenceMember:
+    """Snapshot evidence plus the catalog root that owns it."""
+
+    snapshot: SkillSnapshot
+    provider: str
+    scope: str
+    project_path: str | None
+    root_path: str
+
+
 class GovernanceRepository:
     """Persist bounded local analysis results in the catalog's v4 tables."""
 
@@ -258,7 +269,7 @@ class GovernanceRepository:
             ).fetchone()
         return row is not None
 
-    def evidence_members(self, run_id: str, group_id: str) -> tuple[str, list[SkillSnapshot]]:
+    def evidence_members(self, run_id: str, group_id: str) -> tuple[str, list[EvidenceMember]]:
         stored_group_id = _stored_group_id(run_id, group_id)
         with self.catalog.database.connect() as connection:
             run = connection.execute(
@@ -274,15 +285,32 @@ class GovernanceRepository:
                 raise ValueError("group does not belong to analysis run")
             rows = connection.execute(
                 """
-                SELECT skill_snapshots.*
+                SELECT skill_snapshots.*, library_roots.provider, library_roots.scope,
+                       library_roots.project_path, library_roots.path AS root_path
                 FROM group_members
                 JOIN skill_snapshots ON skill_snapshots.snapshot_id = group_members.snapshot_id
+                JOIN library_roots ON library_roots.root_id = skill_snapshots.root_id
                 WHERE group_members.group_id = ?
-                ORDER BY skill_snapshots.skill_id
+                ORDER BY CASE library_roots.provider
+                             WHEN 'codex' THEN 0
+                             WHEN 'claude' THEN 1
+                             WHEN 'cursor' THEN 2
+                             ELSE 3
+                         END,
+                         skill_snapshots.skill_id
                 """,
                 (stored_group_id,),
             ).fetchall()
-        return run["revision"], [self._snapshot(row) for row in rows]
+        return run["revision"], [
+            EvidenceMember(
+                snapshot=self._snapshot(row),
+                provider=row["provider"],
+                scope=row["scope"],
+                project_path=row["project_path"],
+                root_path=row["root_path"],
+            )
+            for row in rows
+        ]
 
     def review_context(self, run_id: str) -> ReviewContext:
         """Return only the metadata needed to validate and render an Agent review."""

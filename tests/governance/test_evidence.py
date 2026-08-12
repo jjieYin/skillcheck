@@ -3,11 +3,13 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 from skillcheck.catalog.database import CatalogDatabase
 from skillcheck.catalog.models import LibraryRoot, RootScope, SkillSnapshot
 from skillcheck.catalog.repository import CatalogRepository
 from skillcheck.config.models import AppConfig
-from skillcheck.governance import GovernanceAnalyzer
+from skillcheck.governance import GovernanceAnalyzer, Relation, SyncGroupService
 from skillcheck.mcp.runtime import McpRuntime
 
 
@@ -155,3 +157,73 @@ def test_evidence_rejects_a_group_from_another_run(tmp_path) -> None:
         assert "does not belong" in str(error)
     else:
         raise AssertionError("evidence accepted a group belonging to another run")
+
+
+@pytest.fixture
+def analyzer(tmp_path) -> GovernanceAnalyzer:
+    database = CatalogDatabase(tmp_path / "catalog.db")
+    database.initialize()
+    catalog = CatalogRepository(database)
+    roots = {
+        "codex-global": LibraryRoot(
+            root_id="codex-global", path=tmp_path / "codex-global", provider="codex", scope=RootScope.GLOBAL
+        ),
+        "claude-global": LibraryRoot(
+            root_id="claude-global", path=tmp_path / "claude-global", provider="claude", scope=RootScope.GLOBAL
+        ),
+        "cursor-project": LibraryRoot(
+            root_id="cursor-project", path=tmp_path / "cursor-project", provider="cursor", scope=RootScope.PROJECT,
+            project_path=tmp_path / "project",
+        ),
+    }
+    for root in roots.values():
+        catalog.upsert_root(root)
+
+    def add(skill_id: str, root_id: str, content_hash: str, *, snapshot_suffix: str = "") -> None:
+        catalog.upsert_snapshot(
+            SkillSnapshot(
+                snapshot_id=f"snapshot-{skill_id}{snapshot_suffix}", skill_id=skill_id, root_id=root_id,
+                relative_path=f"{skill_id}/SKILL.md", name=skill_id,
+                description="A skill used to verify reporting semantics.",
+                body="Useful local governance instructions.", content_hash=content_hash,
+                indexed_at=datetime(2026, 8, 12, tzinfo=UTC),
+            )
+        )
+
+    add("duplicate-a", "codex-global", "sha256:duplicate")
+    add("duplicate-b", "codex-global", "sha256:duplicate")
+    add("codex-mirror", "codex-global", "sha256:mirror-one")
+    add("claude-mirror", "claude-global", "sha256:mirror-one")
+    add("codex-project-mirror", "codex-global", "sha256:mirror-two")
+    add("cursor-mirror", "cursor-project", "sha256:mirror-two")
+    add("sync-authority", "codex-global", "sha256:sync-authority")
+    add("sync-mirror", "claude-global", "sha256:sync-mirror")
+    add("second-authority", "codex-global", "sha256:second-authority")
+    add("second-mirror", "cursor-project", "sha256:second-mirror")
+
+    sync = SyncGroupService(catalog)
+    sync.create("first", "sync-authority", ["sync-mirror"], "baseline")
+    sync.create("second", "second-authority", ["second-mirror"], "baseline")
+    add(
+        "sync-authority", "codex-global", "sha256:sync-authority-changed", snapshot_suffix="-changed"
+    )
+    return GovernanceAnalyzer(catalog)
+
+
+def test_analysis_counts_mirrors_separately_from_duplicates(analyzer) -> None:
+    result = analyzer.analyze_library(limit=None)
+
+    assert result.summary.exact_duplicates == 1
+    assert result.summary.mirrored_copy_groups == 2
+    assert result.summary.sync_groups_drifted == 1
+
+
+def test_mirror_evidence_includes_agent_scope_and_snapshot(analyzer) -> None:
+    result = analyzer.analyze_library(limit=None)
+    mirror = next(group for group in result.groups if group.relation is Relation.MIRRORED_COPY)
+    evidence = analyzer.evidence(result.run_id, mirror.group_id, include_body=False)
+
+    assert evidence.members[0].provider == "codex"
+    assert evidence.members[0].scope == "global"
+    assert evidence.members[0].snapshot_id
+    assert evidence.members[0].root_path

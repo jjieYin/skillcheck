@@ -9,7 +9,9 @@ from skillcheck.catalog.models import LibraryRoot, RootScope, SkillSnapshot
 from skillcheck.catalog.repository import CatalogRepository
 from skillcheck.governance import GovernanceAnalyzer
 from skillcheck.governance.reviews import ReviewService
+from skillcheck.models.audit import AuditGroup, LibraryAuditReport
 from skillcheck.models.governance import GovernanceDecision, GroupDecision
+from skillcheck.reports.writer import ReportWriter
 
 
 def test_generated_report_has_five_sections_and_hides_skill_bodies(tmp_path) -> None:
@@ -109,3 +111,37 @@ def test_generated_report_includes_local_deterministic_findings(tmp_path) -> Non
     payload = json.loads(saved.json_path.read_text(encoding="utf-8"))
     assert payload["local_findings"]
     assert any(item["rule_id"] == "FMT002" for item in payload["local_findings"])
+
+
+def test_local_audit_reports_mirrors_separately_and_only_recommends_monitoring(tmp_path) -> None:
+    report = LibraryAuditReport(
+        report_id="audit-mirrors",
+        scope="local catalog",
+        installation_count=4,
+        unique_skill_count=3,
+        exact_duplicates=1,
+        mirrored_copy_groups=2,
+        sync_groups_total=2,
+        sync_groups_drifted=1,
+        groups=[
+            AuditGroup(
+                group_id="mirror-group",
+                relation="MIRRORED_COPY",
+                member_skill_ids=["codex-skill", "claude-skill"],
+                confidence="local-rule",
+                recommendations=["Delete the duplicate."],
+            )
+        ],
+    )
+
+    paths = ReportWriter(tmp_path).write(report)
+    markdown = paths.markdown.read_text(encoding="utf-8")
+    payload = json.loads(paths.json.read_text(encoding="utf-8"))
+
+    assert "真正冗余：1 组" in markdown
+    assert "跨 Agent 镜像副本：2 组（不计入冗余）" in markdown
+    assert "同步组：2 个" in markdown
+    assert "存在版本漂移：1 个" in markdown
+    assert payload["exact_duplicates"] == 1
+    assert payload["mirrored_copy_groups"] == 2
+    assert payload["groups"][0]["recommendations"] == ["合理跨作用域分发；可选择建立只监测同步组"]

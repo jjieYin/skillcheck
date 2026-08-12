@@ -1,6 +1,6 @@
 from enum import StrEnum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from skillcheck.models.common import Decision, Severity
 from skillcheck.models.skill import SkillRecord
@@ -60,12 +60,22 @@ class AuditGroup(BaseModel):
     different_points: list[str] = Field(default_factory=list)
     recommendations: list[str] = Field(default_factory=list)
 
+    @model_validator(mode="after")
+    def set_mirror_recommendation(self) -> "AuditGroup":
+        if self.relation == "MIRRORED_COPY":
+            self.recommendations = ["合理跨作用域分发；可选择建立只监测同步组"]
+        return self
+
 
 class LibraryAuditReport(BaseModel):
     report_id: str
     scope: str
     installation_count: int
     unique_skill_count: int
+    exact_duplicates: int = 0
+    mirrored_copy_groups: int = 0
+    sync_groups_total: int = 0
+    sync_groups_drifted: int = 0
     groups: list[AuditGroup] = Field(default_factory=list)
     findings: list[Finding] = Field(default_factory=list)
     capabilities: list[str] = Field(default_factory=list)

@@ -35,6 +35,9 @@ class CandidateGroupSummary(BaseModel):
 class AnalyzeSummary(BaseModel):
     skills_considered: int = 0
     exact_duplicates: int = 0
+    mirrored_copy_groups: int = 0
+    sync_groups_total: int = 0
+    sync_groups_drifted: int = 0
     overlap_candidates: int = 0
     conflict_candidates: int = 0
     variant_candidates: int = 0
@@ -55,6 +58,11 @@ class AnalyzeResult(BaseModel):
 
 class EvidenceSkill(BaseModel):
     skill_id: str
+    snapshot_id: str
+    provider: str
+    scope: str
+    project_path: str | None
+    root_path: str
     name: str
     description: str
     content_hash: str
