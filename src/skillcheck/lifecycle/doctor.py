@@ -135,6 +135,7 @@ class Doctor:
                 "Run skillcheck init to create a v0.4 catalog.",
                 error=True,
             )
+        upgradeable = False
         try:
             uri = f"{path.resolve().as_uri()}?mode=ro"
             with sqlite3.connect(uri, uri=True) as connection:
@@ -149,15 +150,29 @@ class Doctor:
                         "SELECT name FROM sqlite_master WHERE type IN ('table', 'virtual table')"
                     )
                 }
+                schema_version = str(schema[0]) if schema is not None else None
+                upgradeable = (
+                    integrity == "ok"
+                    and schema_version == "4"
+                    and CatalogDatabase._has_expected_v4_structure(connection)
+                )
                 valid = (
                     integrity == "ok"
                     and schema is not None
-                    and schema[0] == str(CatalogDatabase.schema_version_number)
+                    and schema_version == str(CatalogDatabase.schema_version_number)
                     and CatalogDatabase._expected_tables() <= tables
                     and CatalogDatabase._has_expected_structure(connection)
                 )
         except (sqlite3.Error, OSError):
             valid = False
+            upgradeable = False
+        if upgradeable:
+            return self._check(
+                "catalog.integrity",
+                False,
+                "Catalog uses a compatible v0.4 schema and needs migration",
+                "Run skillcheck init to migrate the catalog to the current schema.",
+            )
         return self._check(
             "catalog.integrity",
             valid,
