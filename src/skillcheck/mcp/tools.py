@@ -8,7 +8,7 @@ from pydantic import TypeAdapter
 
 from skillcheck.governance.analyzer import GovernanceAnalyzer
 from skillcheck.governance.models import AnalyzeMode, Relation, SyncPolicy
-from skillcheck.governance.reviews import ReviewService, StaleAnalysisError
+from skillcheck.governance.reviews import ReviewService
 from skillcheck.governance.sync_groups import SyncGroupService
 from skillcheck.mcp.runtime import McpRuntime
 from skillcheck.models.governance import GroupDecision
@@ -107,15 +107,12 @@ class SkillcheckMcpTools:
             raise ValueError("authority and member_skill_ids must match the analyzed group")
         if authority_skill_id not in candidate.member_skill_ids:
             raise ValueError("authority_skill_id must belong to the analyzed group")
-        if not context.is_current:
-            raise StaleAnalysisError("analysis snapshots have changed; analyze again before saving")
-
-        saved = SyncGroupService(repository).create(
+        saved = SyncGroupService(repository).create_from_analysis(
+            run_id=run_id,
+            group_id=group_id,
             name=name,
             authority_skill_id=authority_skill_id,
             member_skill_ids=member_skill_ids,
-            baseline_revision=context.revision,
-            policy=SyncPolicy.MONITOR_ONLY,
         )
         return saved.model_dump(mode="json")
 

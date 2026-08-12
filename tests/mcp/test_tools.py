@@ -9,8 +9,8 @@ from skillcheck.catalog.database import CatalogDatabase
 from skillcheck.catalog.models import LibraryRoot, RootScope, SkillSnapshot
 from skillcheck.catalog.repository import CatalogRepository
 from skillcheck.governance import GovernanceAnalyzer, Relation
-from skillcheck.governance.reviews import StaleAnalysisError
 from skillcheck.governance.models import AnalyzeMode
+from skillcheck.governance.reviews import StaleAnalysisError
 from skillcheck.mcp.tools import SkillcheckMcpTools
 from skillcheck.models.governance import GovernanceDecision, GroupDecision
 
@@ -166,4 +166,45 @@ def test_save_sync_group_rejects_stale_analysis(mcp_tools, stale_mirror_run) -> 
             authority_skill_id="codex-api",
             member_skill_ids=["claude-api"],
             policy="monitor_only",
+        )
+
+
+def test_save_sync_group_rechecks_snapshot_in_its_write_transaction(
+    mcp_tools, mirror_run, monkeypatch
+) -> None:
+    from skillcheck.governance.sync_groups import SyncGroupService
+
+    original = SyncGroupService.create_from_analysis
+
+    def stale_before_transaction(self, *args, **kwargs):
+        mirror_run.catalog.upsert_snapshot(
+            _snapshot("codex-api", "codex-root", "sha256:changed-after-validation")
+        )
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(SyncGroupService, "create_from_analysis", stale_before_transaction)
+
+    with pytest.raises(StaleAnalysisError):
+        mcp_tools.save_sync_group(
+            run_id=mirror_run.result.run_id,
+            group_id=mirror_run.group.group_id,
+            name="api-review",
+            authority_skill_id="codex-api",
+            member_skill_ids=["claude-api"],
+        )
+
+def test_save_sync_group_rejects_deleted_member_as_stale(mcp_tools, mirror_run) -> None:
+    with mirror_run.catalog.database.connect() as connection:
+        connection.execute(
+            "UPDATE skills SET current_snapshot_id = NULL, status = 'missing' WHERE skill_id = ?",
+            ("claude-api",),
+        )
+
+    with pytest.raises(StaleAnalysisError):
+        mcp_tools.save_sync_group(
+            run_id=mirror_run.result.run_id,
+            group_id=mirror_run.group.group_id,
+            name="api-review",
+            authority_skill_id="codex-api",
+            member_skill_ids=["claude-api"],
         )

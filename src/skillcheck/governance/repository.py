@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
+from uuid import uuid4
 
 from skillcheck.catalog.models import SkillSnapshot
 from skillcheck.catalog.repository import CatalogRepository
@@ -62,58 +63,166 @@ class GovernanceRepository:
         with self.catalog.database.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             try:
-                for member in group.members:
-                    skill = connection.execute(
-                        "SELECT status, current_snapshot_id FROM skills WHERE skill_id = ?",
-                        (member.skill_id,),
-                    ).fetchone()
-                    if skill is None or skill["status"] != "active":
-                        raise ValueError(f"skill is not active: {member.skill_id}")
-                    if skill["current_snapshot_id"] != member.baseline_snapshot_id:
-                        raise ValueError(f"skill snapshot changed: {member.skill_id}")
-                    owner = connection.execute(
-                        "SELECT group_id FROM sync_group_members WHERE skill_id = ?",
-                        (member.skill_id,),
-                    ).fetchone()
-                    if owner is not None:
-                        raise ValueError(f"skill already belongs to sync group: {member.skill_id}")
-                connection.execute(
-                    """
-                    INSERT INTO sync_groups(
-                        group_id, name, authority_skill_id, policy, baseline_revision, status, created_at,
-                        updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        group.group_id,
-                        group.name,
-                        group.authority_skill_id,
-                        group.policy.value,
-                        group.baseline_revision,
-                        group.status.value,
-                        now,
-                        now,
-                    ),
-                )
-                for member in group.members:
-                    connection.execute(
-                        """
-                        INSERT INTO sync_group_members(
-                            group_id, skill_id, role, baseline_snapshot_id, baseline_content_hash
-                        ) VALUES (?, ?, ?, ?, ?)
-                        """,
-                        (
-                            group.group_id,
-                            member.skill_id,
-                            member.role.value,
-                            member.baseline_snapshot_id,
-                            member.baseline_content_hash,
-                        ),
-                    )
+                self._insert_sync_group(connection, group, now)
                 connection.commit()
             except Exception:
                 connection.rollback()
                 raise
+
+    def create_sync_group_from_analysis(
+        self,
+        *,
+        run_id: str,
+        group_id: str,
+        name: str,
+        authority_skill_id: str,
+        member_skill_ids: list[str],
+    ) -> SyncGroup:
+        """Save a mirror group only if its analyzed baseline remains current while writing."""
+        from skillcheck.governance.models import SyncMemberRole, SyncPolicy
+        from skillcheck.governance.reviews import StaleAnalysisError
+
+        requested = [authority_skill_id, *member_skill_ids]
+        stored_group_id = _stored_group_id(run_id, group_id)
+        with self.catalog.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                run = connection.execute(
+                    "SELECT revision, status FROM analysis_runs WHERE run_id = ?", (run_id,)
+                ).fetchone()
+                if run is None:
+                    raise ValueError(f"unknown analysis run: {run_id}")
+                if run["status"] != "complete":
+                    raise ValueError("analysis run is not complete")
+                candidate = connection.execute(
+                    "SELECT kind FROM candidate_groups WHERE group_id = ? AND run_id = ?",
+                    (stored_group_id, run_id),
+                ).fetchone()
+                if candidate is None:
+                    raise ValueError("group does not belong to analysis run")
+                if candidate["kind"] != "MIRRORED_COPY":
+                    raise ValueError("group must have MIRRORED_COPY relation")
+                rows = connection.execute(
+                    """
+                    SELECT group_members.snapshot_id AS analyzed_snapshot_id,
+                           skill_snapshots.skill_id,
+                           skill_snapshots.content_hash AS analyzed_content_hash,
+                           skills.status AS current_status,
+                           skills.current_snapshot_id,
+                           current_snapshots.content_hash AS current_content_hash
+                    FROM group_members
+                    JOIN skill_snapshots ON skill_snapshots.snapshot_id = group_members.snapshot_id
+                    LEFT JOIN skills ON skills.skill_id = skill_snapshots.skill_id
+                    LEFT JOIN skill_snapshots AS current_snapshots
+                      ON current_snapshots.snapshot_id = skills.current_snapshot_id
+                    WHERE group_members.group_id = ?
+                    ORDER BY skill_snapshots.skill_id
+                    """,
+                    (stored_group_id,),
+                ).fetchall()
+                analyzed_ids = [row["skill_id"] for row in rows]
+                if len(requested) != len(set(requested)) or set(requested) != set(analyzed_ids):
+                    raise ValueError("authority and member_skill_ids must match the analyzed group")
+                if authority_skill_id not in analyzed_ids:
+                    raise ValueError("authority_skill_id must belong to the analyzed group")
+                latest = connection.execute(
+                    "SELECT revision FROM sync_events ORDER BY completed_at DESC, event_id DESC LIMIT 1"
+                ).fetchone()
+                revision_changed = (
+                    latest is not None
+                    and not str(run["revision"]).startswith("sha256:")
+                    and latest["revision"] != run["revision"]
+                )
+                snapshots_changed = any(
+                    row["current_status"] != "active"
+                    or row["current_snapshot_id"] is None
+                    or row["current_snapshot_id"] != row["analyzed_snapshot_id"]
+                    or row["current_content_hash"] != row["analyzed_content_hash"]
+                    for row in rows
+                )
+                if revision_changed or snapshots_changed:
+                    raise StaleAnalysisError("analysis snapshots have changed; analyze again before saving")
+                group = SyncGroup(
+                    group_id=f"sync-{uuid4().hex}",
+                    name=name,
+                    authority_skill_id=authority_skill_id,
+                    policy=SyncPolicy.MONITOR_ONLY,
+                    baseline_revision=run["revision"],
+                    status=SyncGroupStatus.IN_SYNC,
+                    members=[
+                        SyncGroupMember(
+                            skill_id=row["skill_id"],
+                            role=(
+                                SyncMemberRole.AUTHORITY
+                                if row["skill_id"] == authority_skill_id
+                                else SyncMemberRole.MIRROR
+                            ),
+                            baseline_snapshot_id=row["analyzed_snapshot_id"],
+                            baseline_content_hash=row["analyzed_content_hash"],
+                        )
+                        for row in sorted(
+                            rows,
+                            key=lambda row: (row["skill_id"] != authority_skill_id, row["skill_id"]),
+                        )
+                    ],
+                )
+                self._insert_sync_group(connection, group, datetime.now(UTC).isoformat())
+                connection.commit()
+                return group
+            except Exception:
+                connection.rollback()
+                raise
+
+    @staticmethod
+    def _insert_sync_group(connection, group: SyncGroup, now: str) -> None:
+        for member in group.members:
+            skill = connection.execute(
+                "SELECT status, current_snapshot_id FROM skills WHERE skill_id = ?",
+                (member.skill_id,),
+            ).fetchone()
+            if skill is None or skill["status"] != "active":
+                raise ValueError(f"skill is not active: {member.skill_id}")
+            if skill["current_snapshot_id"] != member.baseline_snapshot_id:
+                raise ValueError(f"skill snapshot changed: {member.skill_id}")
+            owner = connection.execute(
+                "SELECT group_id FROM sync_group_members WHERE skill_id = ?",
+                (member.skill_id,),
+            ).fetchone()
+            if owner is not None:
+                raise ValueError(f"skill already belongs to sync group: {member.skill_id}")
+        connection.execute(
+            """
+            INSERT INTO sync_groups(
+                group_id, name, authority_skill_id, policy, baseline_revision, status, created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                group.group_id,
+                group.name,
+                group.authority_skill_id,
+                group.policy.value,
+                group.baseline_revision,
+                group.status.value,
+                now,
+                now,
+            ),
+        )
+        for member in group.members:
+            connection.execute(
+                """
+                INSERT INTO sync_group_members(
+                    group_id, skill_id, role, baseline_snapshot_id, baseline_content_hash
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    group.group_id,
+                    member.skill_id,
+                    member.role.value,
+                    member.baseline_snapshot_id,
+                    member.baseline_content_hash,
+                ),
+            )
 
     def get_sync_group(self, group_id: str) -> SyncGroup | None:
         with self.catalog.database.connect() as connection:
@@ -425,7 +534,7 @@ class GovernanceRepository:
                 grouped[group_id] = group
             group.member_skill_ids.append(row["skill_id"])
             group.snapshot_ids.append(row["snapshot_id"])
-            if row["current_snapshot_id"] is not None and row["current_snapshot_id"] != row["snapshot_id"]:
+            if row["current_snapshot_id"] != row["snapshot_id"]:
                 current = False
         latest = connection.execute(
             "SELECT revision FROM sync_events ORDER BY completed_at DESC, event_id DESC LIMIT 1"

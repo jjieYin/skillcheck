@@ -92,6 +92,24 @@ class SyncGroupService:
         self.repository.insert_sync_group(group)
         return group
 
+    def create_from_analysis(
+        self,
+        *,
+        run_id: str,
+        group_id: str,
+        name: str,
+        authority_skill_id: str,
+        member_skill_ids: list[str],
+    ) -> SyncGroup:
+        """Persist exactly the current immutable baseline from an analysis run."""
+        return self.repository.create_sync_group_from_analysis(
+            run_id=run_id,
+            group_id=group_id,
+            name=name,
+            authority_skill_id=authority_skill_id,
+            member_skill_ids=member_skill_ids,
+        )
+
     def remove(self, group_id: str) -> None:
         self.repository.delete_sync_group(group_id)
 
