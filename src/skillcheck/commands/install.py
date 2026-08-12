@@ -15,6 +15,7 @@ from skillcheck.targets.claude import ClaudeTarget
 from skillcheck.targets.codex import CodexTarget
 from skillcheck.targets.cursor import CursorTarget
 from skillcheck.targets.registry import TargetRegistry
+from skillcheck.ui.agent_picker import AgentPicker
 
 SUPPORTED_TARGETS = ("codex", "claude", "cursor")
 
@@ -102,6 +103,9 @@ def register(app: typer.Typer) -> None:
         config: Annotated[Path | None, typer.Option("--config")] = None,
     ) -> None:
         try:
+            # ``create=False`` is intentional: a cancelled picker must not
+            # leave a partially initialized Skillcheck configuration behind.
+            loaded = load_config(config, create=False)
             pipeline = build_install_pipeline(config, create=False)
             if print_config is not None:
                 selected = _selected_targets(pipeline, print_config)
@@ -111,16 +115,22 @@ def register(app: typer.Typer) -> None:
                 typer.echo(change.after_text, nl=False)
                 return
 
-            selected = _selected_targets(pipeline, target)
-            if target.casefold() == "auto" and selected and sys.stdin.isatty():
-                detected = ",".join(selected)
-                choice = typer.prompt(
-                    "Select Agent targets (comma separated)",
-                    default=detected,
+            if target.casefold() != "auto" or yes or not sys.stdin.isatty():
+                selected = _selected_targets(pipeline, target)
+            else:
+                picker_result = AgentPicker().choose(
+                    pipeline.discover().agents,
+                    configured=loaded.targets.configured,
                 )
-                selected = _selected_targets(pipeline, choice)
+                if picker_result.cancelled:
+                    typer.echo("Cancelled; no files were changed.")
+                    return
+                selected = picker_result.selected
             if not selected:
-                typer.echo("No installed Agent was detected. Use --target all to configure all supported Agents.")
+                typer.echo(
+                    "No Agent target was selected or detected. "
+                    "Use --target all to configure all supported Agents."
+                )
                 return
             preview = pipeline.preview(selected, scope=location)
             for change in preview.changes:

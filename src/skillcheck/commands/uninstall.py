@@ -11,16 +11,21 @@ from typing import Annotated
 
 import typer
 
-from skillcheck.commands.install import _build_install_pipeline
-from skillcheck.config import app_home, load_config
+from skillcheck.commands.install import SUPPORTED_TARGETS, _build_install_pipeline
+from skillcheck.config import app_home, load_config, save_config
 from skillcheck.lifecycle.uninstall import RemovalOutcome, UninstallManager
 from skillcheck.lifecycle.upgrade import LocalUpgradeLayout
 
 
-def build_uninstall_context():
-    config = load_config(create=False)
+def build_uninstall_context(
+    config_path: Path | None = None,
+    *,
+    target_names: list[str] | None = None,
+):
+    config = load_config(config_path, create=False)
     pipeline = _build_install_pipeline(config)
-    selected = [pipeline.registry.get(agent) for agent in config.targets.configured]
+    selected_names = list(config.targets.configured) if target_names is None else list(target_names)
+    selected = [pipeline.registry.get(agent) for agent in selected_names]
     data_root = app_home().resolve(strict=False)
     layout = LocalUpgradeLayout()
     program_root = layout.root.expanduser().resolve(strict=False)
@@ -56,6 +61,9 @@ def build_uninstall_context():
 
     return SimpleNamespace(
         targets=SimpleNamespace(configured=lambda: selected),
+        configured_names=list(config.targets.configured),
+        selected_names=selected_names,
+        config_path=config_path,
         agent_scope=config.targets.scope,
         layout=SimpleNamespace(
             owned_program_paths=lambda: [program_root],
@@ -65,6 +73,38 @@ def build_uninstall_context():
         helpers=SimpleNamespace(remove_program_after_exit=remove_program),
         data=SimpleNamespace(remove_selected=remove_data),
     )
+
+
+def _selected_targets(requested: str | None, configured: list[str]) -> list[str]:
+    """Normalize an uninstall selector without widening the removal scope."""
+
+    if requested is None or requested.strip().casefold() in {"", "all"}:
+        return list(dict.fromkeys(configured))
+    selected = [part.strip().casefold() for part in requested.split(",") if part.strip()]
+    invalid = [item for item in selected if item not in SUPPORTED_TARGETS]
+    if invalid:
+        allowed = ", ".join((*SUPPORTED_TARGETS, "all"))
+        raise ValueError(f"--target must be one of: {allowed}")
+    return list(dict.fromkeys(selected))
+
+
+def _remove_configured_targets(config_path: Path | None, selected: list[str]) -> None:
+    """Forget selected integrations while preserving the rest of the config."""
+
+    if not selected:
+        return
+    loaded = load_config(config_path, create=False)
+    before = list(loaded.targets.configured)
+    remaining = [agent for agent in before if agent not in selected]
+    if remaining == before:
+        return
+    loaded.targets.configured = remaining
+    loaded.targets.last_validated = bool(remaining)
+    save_config(_config_path(config_path), loaded)
+
+
+def _config_path(path: Path | None) -> Path:
+    return path.expanduser() if path is not None else app_home() / "config.yaml"
 
 
 def _schedule_windows_removal(path: Path, path_entry: Path | None = None) -> None:
@@ -123,14 +163,24 @@ def _powershell_literal(path: Path) -> str:
 def register(app: typer.Typer) -> None:
     @app.command("uninstall")
     def uninstall(
+        target: Annotated[
+            str | None,
+            typer.Option("--target", help="Remove only the selected Agent integration(s)"),
+        ] = None,
         yes: Annotated[bool, typer.Option("--yes")] = False,
         keep_cli: Annotated[bool, typer.Option("--keep-cli")] = False,
         keep_data: Annotated[bool, typer.Option("--keep-data")] = False,
         complete: Annotated[bool, typer.Option("--complete")] = False,
         as_json: Annotated[bool, typer.Option("--json")] = False,
+        config: Annotated[Path | None, typer.Option("--config")] = None,
     ) -> None:
         try:
-            manager = UninstallManager(build_uninstall_context())
+            if target is not None and complete:
+                raise ValueError("--target cannot be combined with --complete")
+            initial = load_config(config, create=False)
+            selected_names = _selected_targets(target, list(initial.targets.configured))
+            context = build_uninstall_context(config, target_names=selected_names)
+            manager = UninstallManager(context)
             plan = manager.plan(keep_cli=keep_cli, keep_data=keep_data, complete=complete)
             if as_json:
                 typer.echo(plan.model_dump_json(indent=2))
@@ -139,6 +189,8 @@ def register(app: typer.Typer) -> None:
                 typer.echo(f"- {path}")
             confirmed = yes or typer.confirm("Remove only Skillcheck-owned integrations?")
             result = manager.execute(plan, confirmed=confirmed)
+            if confirmed and target is not None and not complete:
+                _remove_configured_targets(config, selected_names)
             typer.echo(result.message)
             raise typer.Exit(code=0 if result.changed else 1)
         except typer.Exit:
