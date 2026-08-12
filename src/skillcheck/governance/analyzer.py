@@ -6,6 +6,7 @@ import re
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Literal
 from uuid import uuid4
 
 import numpy as np
@@ -54,6 +55,9 @@ _CREDENTIAL = re.compile(
 _LEXICAL_TOKEN = re.compile(r"\w+", re.UNICODE)
 _LEXICAL_DIMENSIONS = 128
 
+TriggerSource = Literal["explicit_user", "agent_intent", "tool_chain", "cli"]
+_TRIGGER_SOURCES = {"explicit_user", "agent_intent", "tool_chain", "cli"}
+
 
 class GovernanceAnalyzer:
     """Deterministic local analysis and bounded evidence retrieval.
@@ -82,28 +86,50 @@ class GovernanceAnalyzer:
         source: Path | str | None = None,
         scope: str = "all",
         limit: int = 20,
+        trigger_source: TriggerSource = "agent_intent",
     ) -> AnalyzeResult:
+        self._validate_trigger_source(trigger_source)
         selected_mode = AnalyzeMode(mode)
         if selected_mode is AnalyzeMode.LIBRARY:
             if source is not None:
                 raise ValueError("library analysis does not accept a source")
-            return self.analyze_library(scope=scope, limit=limit)
+            return self.analyze_library(scope=scope, limit=limit, trigger_source=trigger_source)
         if source is None:
             raise ValueError("source analysis requires a staged local directory or ZIP file")
-        return self.analyze_source(source, limit=limit)
+        return self.analyze_source(source, limit=limit, trigger_source=trigger_source)
 
-    def analyze_library(self, *, scope: str = "all", limit: int | None = 20) -> AnalyzeResult:
+    def analyze_library(
+        self,
+        *,
+        scope: str = "all",
+        limit: int | None = 20,
+        trigger_source: TriggerSource = "agent_intent",
+    ) -> AnalyzeResult:
+        self._validate_trigger_source(trigger_source)
         stale = self._sync_and_stale([])
         snapshots = self.catalog.list_current_skills()
         if limit is None:
             limit = max(1, len(snapshots))
         else:
             self._validate_limit(limit)
-        return self._analyze(AnalyzeMode.LIBRARY, snapshots, self._revision(), stale, limit)
+        return self._analyze(
+            AnalyzeMode.LIBRARY,
+            snapshots,
+            self._revision(),
+            stale,
+            limit,
+            trigger_source=trigger_source,
+        )
 
     def analyze_source(
-        self, source: Path | str, *, scope: str = "all", limit: int = 20
+        self,
+        source: Path | str,
+        *,
+        scope: str = "all",
+        limit: int = 20,
+        trigger_source: TriggerSource = "agent_intent",
     ) -> AnalyzeResult:
+        self._validate_trigger_source(trigger_source)
         self._validate_limit(limit)
         del scope
         self.staging_root.mkdir(parents=True, exist_ok=True)
@@ -118,6 +144,7 @@ class GovernanceAnalyzer:
                 source_hash,
                 False,
                 limit,
+                trigger_source=trigger_source,
                 lexical_fallback=True,
                 source_skill_ids={item.skill_id for item in source_snapshots},
             )
@@ -169,6 +196,7 @@ class GovernanceAnalyzer:
         stale: bool,
         limit: int,
         *,
+        trigger_source: TriggerSource,
         lexical_fallback: bool = False,
         source_skill_ids: set[str] | None = None,
     ) -> AnalyzeResult:
@@ -197,6 +225,7 @@ class GovernanceAnalyzer:
             groups=groups,
             snapshots_by_skill=by_skill,
             findings=audit.findings,
+            trigger_source=trigger_source,
         )
         return AnalyzeResult(
             run_id=run_id,
@@ -339,6 +368,12 @@ class GovernanceAnalyzer:
             outputs=snapshot.outputs,
             body=body,
         )
+
+    @staticmethod
+    def _validate_trigger_source(value: str) -> None:
+        if value not in _TRIGGER_SOURCES:
+            allowed = ", ".join(sorted(_TRIGGER_SOURCES))
+            raise ValueError(f"trigger_source must be one of: {allowed}")
 
     def _sync_groups(self):
         """Refresh monitor-only groups before reporting their current drift state."""

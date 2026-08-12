@@ -52,7 +52,7 @@ class EvidenceMember:
 
 
 class GovernanceRepository:
-    """Persist bounded local analysis results in the catalog's v4 tables."""
+    """Persist bounded local analysis results in the catalog's v5 tables."""
 
     def __init__(self, catalog: CatalogRepository) -> None:
         self.catalog = catalog
@@ -285,6 +285,7 @@ class GovernanceRepository:
         groups: list[CandidateGroupSummary],
         snapshots_by_skill: dict[str, SkillSnapshot],
         findings: list[Finding] | None = None,
+        trigger_source: str = "agent_intent",
     ) -> None:
         now = datetime.now(UTC).isoformat()
         with self.catalog.database.connect() as connection:
@@ -303,7 +304,12 @@ class GovernanceRepository:
                         now,
                         now,
                         json.dumps(
-                            {"local_findings": [item.model_dump(mode="json") for item in (findings or [])]},
+                            {
+                                "local_findings": [
+                                    item.model_dump(mode="json") for item in (findings or [])
+                                ],
+                                "trigger_source": trigger_source,
+                            },
                             ensure_ascii=False,
                         ),
                     ),
@@ -326,6 +332,16 @@ class GovernanceRepository:
             except Exception:
                 connection.rollback()
                 raise
+
+    def analysis_parameters(self, run_id: str) -> dict[str, object]:
+        """Return non-sensitive parameters recorded for an analysis run."""
+        with self.catalog.database.connect() as connection:
+            row = connection.execute(
+                "SELECT parameters_json FROM analysis_runs WHERE run_id = ?", (run_id,)
+            ).fetchone()
+        if row is None:
+            raise ValueError(f"unknown analysis run: {run_id}")
+        return json.loads(row["parameters_json"] or "{}")
 
     def save_source_preflight(self, preflight: SourcePreflight) -> None:
         """Store local source evidence for the exact bytes that were analyzed."""

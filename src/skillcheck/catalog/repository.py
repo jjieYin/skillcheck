@@ -28,6 +28,16 @@ class CatalogRepository:
     def __init__(self, database: CatalogDatabase) -> None:
         self.database = database
 
+    def analysis_parameters(self, run_id: str) -> dict[str, object]:
+        """Return non-sensitive parameters recorded for an analysis run."""
+        with self.database.connect() as connection:
+            row = connection.execute(
+                "SELECT parameters_json FROM analysis_runs WHERE run_id = ?", (run_id,)
+            ).fetchone()
+        if row is None:
+            raise ValueError(f"unknown analysis run: {run_id}")
+        return json.loads(row["parameters_json"] or "{}")
+
     def upsert_root(self, root: LibraryRoot) -> None:
         now = _now()
         with self.database.connect() as connection:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from mcp.server.fastmcp import FastMCP
 
@@ -24,16 +24,29 @@ def create_server(tools: SkillcheckMcpTools) -> FastMCP:
     """Create a server with only Agent-native governance tools."""
     server = FastMCP("skillcheck", instructions=MCP_INSTRUCTIONS, log_level="ERROR")
 
-    @server.tool(name="skillcheck_analyze", description="Analyze a local Skill library or incoming source.")
+    @server.tool(
+        name="skillcheck_analyze",
+        description=(
+            "Use only for local Skill governance or incoming Skill preflight; "
+            "not for ordinary software-development tasks."
+        ),
+    )
     def skillcheck_analyze(
         mode: str,
         source: str | None = None,
         scope: str = "all",
         limit: int = 20,
+        trigger_source: Literal["explicit_user", "agent_intent", "tool_chain"] = "agent_intent",
     ) -> dict[str, object]:
-        return tools.analyze(mode, source, scope, limit)
+        return tools.analyze(mode, source, scope, limit, trigger_source)
 
-    @server.tool(name="skillcheck_evidence", description="Read bounded, redacted evidence for one candidate group.")
+    @server.tool(
+        name="skillcheck_evidence",
+        description=(
+            "Follow-up only after skillcheck_analyze returns a candidate group; "
+            "read bounded, redacted evidence for that group."
+        ),
+    )
     def skillcheck_evidence(
         run_id: str,
         group_id: str,
@@ -42,13 +55,22 @@ def create_server(tools: SkillcheckMcpTools) -> FastMCP:
     ) -> dict[str, object]:
         return tools.evidence(run_id, group_id, page, include_body)
 
-    @server.tool(name="skillcheck_save_review", description="Save the Agent's explicit governance decisions as a report.")
+    @server.tool(
+        name="skillcheck_save_review",
+        description=(
+            "Follow-up only after analysis and evidence; save explicit human-readable "
+            "governance decisions when the user asked for a persisted review."
+        ),
+    )
     def skillcheck_save_review(run_id: str, decisions: list[dict[str, Any]]) -> dict[str, object]:
         return tools.save_review(run_id, decisions)
 
     @server.tool(
         name="skillcheck_save_sync_group",
-        description="Save a user-confirmed monitor-only group for cross-Agent mirrored Skills; never copies or edits Skill files.",
+        description=(
+            "Follow-up only after analysis and user confirmation; save a monitor-only "
+            "cross-Agent mirror group, never copy or edit Skill files."
+        ),
     )
     def skillcheck_save_sync_group(
         run_id: str,

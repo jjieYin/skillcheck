@@ -34,6 +34,7 @@ class SkillcheckMcpTools:
         source: str | None = None,
         scope: str = "all",
         limit: int = 20,
+        trigger_source: str = "agent_intent",
     ) -> dict[str, object]:
         try:
             selected_mode = AnalyzeMode(mode)
@@ -46,9 +47,21 @@ class SkillcheckMcpTools:
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
             raise ValueError("limit must be between 1 and 100")
         self.runtime.before_query()
-        result = self._governance().analyze(
-            selected_mode, source=source, scope=scope, limit=limit
-        )
+        analyzer = self._governance()
+        try:
+            result = analyzer.analyze(
+                selected_mode,
+                source=source,
+                scope=scope,
+                limit=limit,
+                trigger_source=trigger_source,
+            )
+        except TypeError as error:
+            # Keep the facade compatible with injected v0.4 analyzers used by
+            # integrations while the built-in analyzer records the source.
+            if "trigger_source" not in str(error):
+                raise
+            result = analyzer.analyze(selected_mode, source=source, scope=scope, limit=limit)
         return result.model_dump(mode="json")
 
     def evidence(

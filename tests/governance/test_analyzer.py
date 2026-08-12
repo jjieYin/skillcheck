@@ -58,6 +58,14 @@ def test_library_analyze_groups_exact_duplicates_and_persists_run(
     assert result.next_tool == "skillcheck_evidence"
 
 
+def test_library_analyze_records_trigger_source(
+    analyzer: GovernanceAnalyzer, repository: CatalogRepository
+) -> None:
+    result = analyzer.analyze_library(limit=20, trigger_source="explicit_user")
+
+    assert repository.analysis_parameters(result.run_id)["trigger_source"] == "explicit_user"
+
+
 def test_library_analyze_classifies_cross_agent_hash_matches_as_mirrors(
     analyzer: GovernanceAnalyzer, repository: CatalogRepository, tmp_path
 ) -> None:
