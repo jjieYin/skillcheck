@@ -36,6 +36,21 @@ def test_source_analyze_binds_run_to_source_hash(analyzer: GovernanceAnalyzer, t
     assert stored.expires_at > stored.created_at
 
 
+def test_default_source_analysis_considers_every_incoming_skill(
+    analyzer: GovernanceAnalyzer, tmp_path: Path
+) -> None:
+    source = tmp_path / "source"
+    for index in range(25):
+        body = "API_KEY='sk-test-1234567890'" if index == 24 else f"Safe implementation {index}."
+        write_skill(source / f"skill-{index:02d}", name=f"skill-{index:02d}", body=body)
+
+    result = analyzer.analyze_source(source)
+
+    assert result.summary.skills_considered == 25
+    stored = analyzer.repository.get_source_preflight(result.run_id)
+    assert any(item.rule_id == "SEC002" for item in stored.deterministic_blockers)
+
+
 def test_source_analyze_cleans_staging_after_failure(analyzer: GovernanceAnalyzer, tmp_path: Path) -> None:
     archive = tmp_path / "unsafe.zip"
     with ZipFile(archive, "w") as zip_file:

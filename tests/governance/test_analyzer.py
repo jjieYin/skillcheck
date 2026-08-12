@@ -194,3 +194,21 @@ def test_analyze_never_calls_an_agent_process(analyzer: GovernanceAnalyzer, monk
     monkeypatch.setattr(subprocess, "run", forbidden)
 
     analyzer.analyze_library(scope="all", limit=20)
+
+
+def test_default_library_analysis_considers_every_indexed_skill(
+    analyzer: GovernanceAnalyzer, repository: CatalogRepository
+) -> None:
+    for index in range(168):
+        body = "duplicate tail" if index in {160, 167} else f"unique {index}"
+        content_hash = "sha256:duplicate-tail" if index in {160, 167} else f"sha256:{index}"
+        repository.upsert_snapshot(_snapshot(f"skill-{index:03d}", content_hash, body=body))
+
+    result = analyzer.analyze_library()
+
+    assert result.summary.skills_considered == 168
+    assert any(
+        group.relation is Relation.EXACT_DUPLICATE
+        and set(group.member_skill_ids) == {"skill-160", "skill-167"}
+        for group in result.groups
+    )

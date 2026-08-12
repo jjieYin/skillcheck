@@ -85,7 +85,7 @@ class GovernanceAnalyzer:
         *,
         source: Path | str | None = None,
         scope: str = "all",
-        limit: int = 20,
+        limit: int | None = None,
         trigger_source: TriggerSource = "agent_intent",
     ) -> AnalyzeResult:
         self._validate_trigger_source(trigger_source)
@@ -102,7 +102,7 @@ class GovernanceAnalyzer:
         self,
         *,
         scope: str = "all",
-        limit: int | None = 20,
+        limit: int | None = None,
         trigger_source: TriggerSource = "agent_intent",
     ) -> AnalyzeResult:
         self._validate_trigger_source(trigger_source)
@@ -126,11 +126,10 @@ class GovernanceAnalyzer:
         source: Path | str,
         *,
         scope: str = "all",
-        limit: int = 20,
+        limit: int | None = None,
         trigger_source: TriggerSource = "agent_intent",
     ) -> AnalyzeResult:
         self._validate_trigger_source(trigger_source)
-        self._validate_limit(limit)
         del scope
         self.staging_root.mkdir(parents=True, exist_ok=True)
         with stage_source(source, limits=self.source_limits, staging_parent=self.staging_root) as staged:
@@ -138,12 +137,17 @@ class GovernanceAnalyzer:
             source_hash = content_hash(root)
             source_snapshots = self._source_snapshots(root, source_hash)
             snapshots = [*source_snapshots, *self.catalog.list_current_skills()]
+            if limit is None:
+                effective_limit = max(1, len(snapshots))
+            else:
+                self._validate_limit(limit)
+                effective_limit = limit
             result = self._analyze(
                 AnalyzeMode.SOURCE,
                 snapshots,
                 source_hash,
                 False,
-                limit,
+                effective_limit,
                 trigger_source=trigger_source,
                 lexical_fallback=True,
                 source_skill_ids={item.skill_id for item in source_snapshots},
