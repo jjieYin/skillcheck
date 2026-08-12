@@ -5,6 +5,8 @@ from PyInstaller.utils.hooks import collect_submodules
 hiddenimports = collect_submodules("mcp") + [
     "pydantic.deprecated.decorator",
     "skillcheck.reports",
+    "questionary",
+    "prompt_toolkit",
 ]
 
 a = Analysis(
