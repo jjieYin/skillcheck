@@ -43,3 +43,8 @@ EOF
 chmod +x "${BIN}/skillcheck"
 case ":${PATH:-}:" in *":${BIN}:"*) ;; *) echo "请将 ${BIN} 加入 PATH" ;; esac
 "${BIN}/skillcheck" version
+if [ -t 0 ] && [ -t 1 ]; then
+  "${BIN}/skillcheck" install
+else
+  echo "Release installed. Run skillcheck install in an interactive terminal to choose Agent targets."
+fi

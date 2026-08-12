@@ -14,3 +14,9 @@ def test_posix_installer_uses_a_platform_manifest() -> None:
     script = Path("install.sh").read_text(encoding="utf-8")
     assert 'MANIFEST="manifest-${PLATFORM}-${ARCH}.json"' in script
     assert '"${BASE}/${MANIFEST}${DOWNLOAD_QUERY}"' in script
+
+
+def test_posix_installer_does_not_initialize_or_scan_skills() -> None:
+    script = Path("install.sh").read_text(encoding="utf-8")
+    assert '"${BIN}/skillcheck" install' in script
+    assert '"${BIN}/skillcheck" init' not in script
