@@ -189,6 +189,28 @@ class CatalogRepository:
             ).fetchone()
         return _snapshot_from_row(row, row["skill_status"]) if row else None
 
+    def get_current_skills(self, skill_ids: Iterable[str]) -> dict[str, SkillSnapshot | None]:
+        """Read current snapshots for all requested IDs from one database view."""
+        requested = list(dict.fromkeys(skill_ids))
+        current: dict[str, SkillSnapshot | None] = {skill_id: None for skill_id in requested}
+        if not requested:
+            return current
+        placeholders = ", ".join("?" for _ in requested)
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT skill_snapshots.*, skills.status AS skill_status
+                FROM skills
+                JOIN skill_snapshots
+                  ON skill_snapshots.snapshot_id = skills.current_snapshot_id
+                WHERE skills.skill_id IN ({placeholders})
+                """,
+                requested,
+            ).fetchall()
+        for row in rows:
+            current[row["skill_id"]] = _snapshot_from_row(row, row["skill_status"])
+        return current
+
     def list_current_skills(self, search: str | None = None) -> list[SkillSnapshot]:
         parameters: tuple[str, ...] = ()
         if search is None:

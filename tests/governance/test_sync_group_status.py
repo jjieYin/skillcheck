@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import pytest
@@ -7,7 +8,7 @@ import pytest
 from skillcheck.catalog.database import CatalogDatabase
 from skillcheck.catalog.models import LibraryRoot, RootScope, SkillSnapshot, SkillStatus
 from skillcheck.catalog.repository import CatalogRepository
-from skillcheck.governance import SyncGroupService, SyncGroupStatus
+from skillcheck.governance import SyncGroup, SyncGroupService, SyncGroupStatus
 
 
 def _snapshot(
@@ -44,29 +45,40 @@ def sync_group_scenario(tmp_path):
     service = SyncGroupService(catalog)
     group = service.create("shared-api", "authority", ["mirror"], "sync-1")
 
-    def scenario(name: str):
-        if name == "authority_changed_mirrors_unchanged":
-            catalog.upsert_snapshot(
-                _snapshot("authority", content_hash="sha256:authority-change", revision="changed")
-            )
-        elif name == "mirror_changed_independently":
-            catalog.upsert_snapshot(
-                _snapshot("mirror", content_hash="sha256:mirror-change", revision="changed")
-            )
-        elif name == "authority_missing":
-            catalog.mark_missing("authority")
-        elif name == "member_invalid":
-            catalog.upsert_snapshot(
-                _snapshot("mirror", status=SkillStatus.INVALID, revision="invalid")
-            )
-        elif name != "all_equal":
-            raise ValueError(f"unknown scenario: {name}")
-        refreshed = service.get(group.group_id)
-        assert refreshed is not None
-        assert service.list() == [refreshed]
-        return refreshed
+    @dataclass
+    class Scenario:
+        catalog: CatalogRepository
+        service: SyncGroupService
+        group: SyncGroup
 
-    return scenario
+        def __call__(self, name: str) -> SyncGroup:
+            if name == "authority_changed_mirrors_unchanged":
+                self.catalog.upsert_snapshot(
+                    _snapshot("authority", content_hash="sha256:authority-change", revision="changed")
+                )
+            elif name == "mirror_changed_independently":
+                self.catalog.upsert_snapshot(
+                    _snapshot("mirror", content_hash="sha256:mirror-change", revision="changed")
+                )
+            elif name == "authority_missing":
+                self.catalog.mark_missing("authority")
+            elif name == "mirror_missing":
+                self.catalog.mark_missing("mirror")
+            elif name == "member_invalid":
+                self.catalog.upsert_snapshot(
+                    _snapshot("mirror", status=SkillStatus.INVALID, revision="invalid")
+                )
+            elif name != "all_equal":
+                raise ValueError(f"unknown scenario: {name}")
+            refreshed = self.service.get(self.group.group_id)
+            assert refreshed is not None
+            assert self.service.list() == [refreshed]
+            persisted = self.service.repository.get_sync_group(self.group.group_id)
+            assert persisted is not None
+            assert persisted.status is refreshed.status
+            return refreshed
+
+    return Scenario(catalog=catalog, service=service, group=group)
 
 
 @pytest.mark.parametrize(
@@ -76,6 +88,7 @@ def sync_group_scenario(tmp_path):
         ("authority_changed_mirrors_unchanged", SyncGroupStatus.DRIFTED),
         ("mirror_changed_independently", SyncGroupStatus.DIVERGED),
         ("authority_missing", SyncGroupStatus.BROKEN),
+        ("mirror_missing", SyncGroupStatus.BROKEN),
         ("member_invalid", SyncGroupStatus.INVALID_MEMBER),
     ],
 )
@@ -91,3 +104,10 @@ def test_get_and_list_refresh_status_without_changing_member_baselines(sync_grou
         "sha256:baseline",
         "sha256:baseline",
     ]
+
+
+def test_current_snapshot_batch_includes_missing_member_key(sync_group_scenario) -> None:
+    current = sync_group_scenario.catalog.get_current_skills(["authority", "unknown-member"])
+
+    assert current["authority"] is not None
+    assert current["unknown-member"] is None

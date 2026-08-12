@@ -21,6 +21,8 @@ def calculate_status(
     authority = current.get(group.authority_skill_id)
     if authority is None or authority.status is SkillStatus.MISSING:
         return SyncGroupStatus.BROKEN
+    if any(item is None or item.status is SkillStatus.MISSING for item in current.values()):
+        return SyncGroupStatus.BROKEN
     if any(item is None or item.status is SkillStatus.INVALID for item in current.values()):
         return SyncGroupStatus.INVALID_MEMBER
     if all(item.content_hash == authority.content_hash for item in current.values() if item):
@@ -98,10 +100,7 @@ class SyncGroupService:
         return [self._refresh_status(group) for group in self.repository.list_sync_groups()]
 
     def _refresh_status(self, group: SyncGroup) -> SyncGroup:
-        current = {
-            member.skill_id: self.repository.catalog.get_current_skill(member.skill_id)
-            for member in group.members
-        }
+        current = self.repository.catalog.get_current_skills(member.skill_id for member in group.members)
         status = calculate_status(group, current)
         self.repository.update_sync_group_status(group.group_id, status)
         return group.model_copy(update={"status": status})
