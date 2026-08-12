@@ -3,10 +3,10 @@ from pathlib import Path
 
 from skillcheck import __version__
 
-EXPECTED_RELEASE_VERSION = "0.4.1"
+EXPECTED_RELEASE_VERSION = "0.5.0"
 
 
-def test_source_and_project_versions_match_v040_release() -> None:
+def test_source_and_project_versions_match_v050_release() -> None:
     project = tomllib.loads(
         (Path(__file__).parents[1] / "pyproject.toml").read_text(encoding="utf-8")
     )

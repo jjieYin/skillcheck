@@ -85,4 +85,3 @@ def test_cancelled_install_does_not_create_configuration(monkeypatch, tmp_path: 
 
     assert result.exit_code == 0
     assert not config.exists()
-

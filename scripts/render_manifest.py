@@ -16,8 +16,8 @@ def render(asset: Path, *, version: str, output: Path, platform: str, architectu
         "architecture": architecture,
         "asset_name": asset.name,
         "sha256": digest,
-        "data_schema_version": 4,
-        "minimum_compatible_version": "0.4.0",
+        "data_schema_version": 5,
+        "minimum_compatible_version": "0.5.0",
     }
     output.mkdir(parents=True, exist_ok=True)
     (output / "manifest.json").write_text(

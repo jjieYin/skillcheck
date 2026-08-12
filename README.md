@@ -157,6 +157,12 @@ permission conflicts, security blockers, and boundary changes.
 
 The Agent uses the local MCP server. Skillcheck does not start a Codex, Claude, or other Agent subprocess.
 
+Skillcheck is intentionally conditional. It is used for local Skill inventory,
+duplicates, overlap, conflicts, installation preflight, cross-Agent mirrors,
+sync groups, or governance. Ordinary coding, debugging, testing, writing,
+repository exploration, and tasks that merely use an already-selected Skill do
+not call Skillcheck.
+
 ## Use it from the CLI
 
 ### Scan the existing library without an Agent
@@ -214,13 +220,14 @@ The server uses MCP stdio. It does not open a network port or run as a permanent
 
 ## MCP tools
 
-Skillcheck exposes three Agent-facing tools:
+Skillcheck exposes four Agent-facing tools:
 
 | Tool | Purpose | Returns |
 | --- | --- | --- |
 | `skillcheck_analyze` | Analyze the current library or an incoming source | `run_id`, summary, candidate groups, deterministic findings, sync state |
 | `skillcheck_evidence` | Read one candidate group page by page | Redacted metadata, body excerpts when requested, shared/different capabilities, stale state |
 | `skillcheck_save_review` | Save the Agent's explicit governance decision | Review ID, decisions, confidence, Markdown path, JSON path |
+| `skillcheck_save_sync_group` | Save a user-confirmed monitor-only cross-Agent mirror group | Group ID, authority, members, baseline status |
 
 The intended sequence is:
 
@@ -235,6 +242,11 @@ skillcheck_save_review
 ```
 
 Review writes are rejected when the run, group, schema, or content snapshot is invalid or stale.
+
+`MIRRORED_COPY` means the same Skill is intentionally present in different
+Agent scopes; it is not counted as local redundancy. A sync group records the
+chosen authority and immutable member baseline for monitoring only. It never
+automatically copies, overwrites, deletes, or renames a Skill.
 
 ## What gets indexed
 

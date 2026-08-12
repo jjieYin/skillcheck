@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+from skillcheck.catalog.database import CatalogDatabase
 from skillcheck.lifecycle.doctor import REQUIRED_CODES, Doctor
 
 
@@ -69,6 +70,25 @@ def test_doctor_rejects_schema_marker_without_complete_v4_catalog(tmp_path: Path
     integrity = next(item for item in report.checks if item.code == "catalog.integrity")
     assert integrity.status.value == "error"
     assert index.read_bytes() == before
+
+
+def test_doctor_accepts_complete_v5_catalog(tmp_path: Path) -> None:
+    index = tmp_path / "index.db"
+    CatalogDatabase(index).initialize()
+    context = SimpleNamespace(
+        python_version=(3, 11, 0),
+        path_shadowing=False,
+        config=SimpleNamespace(schema_version=4, catalog=SimpleNamespace(initialized=True)),
+        index_path=index,
+        reports_path=tmp_path,
+        registry=None,
+        mcp_available=True,
+    )
+
+    report = Doctor(context).run()
+
+    integrity = next(item for item in report.checks if item.code == "catalog.integrity")
+    assert integrity.status.value == "ok"
 
 
 def test_doctor_reports_catalog_sync_warning_with_a_failure_message(tmp_path: Path) -> None:

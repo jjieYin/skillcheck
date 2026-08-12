@@ -1,4 +1,4 @@
-"""Bounded v0.4 diagnostics and explicitly confirmed repairs."""
+"""Bounded diagnostics and explicitly confirmed repairs."""
 
 from __future__ import annotations
 
@@ -152,7 +152,7 @@ class Doctor:
                 valid = (
                     integrity == "ok"
                     and schema is not None
-                    and schema[0] == "4"
+                    and schema[0] == str(CatalogDatabase.schema_version_number)
                     and CatalogDatabase._expected_tables() <= tables
                     and CatalogDatabase._has_expected_structure(connection)
                 )

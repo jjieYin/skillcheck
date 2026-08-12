@@ -11,15 +11,15 @@ def test_release_asset_hash_must_match(tmp_path: Path) -> None:
     asset = tmp_path / "skillcheck.zip"
     asset.write_bytes(b"release")
     manifest = ReleaseManifest(
-        version="0.4.0",
+        version="0.5.0",
         platform="windows",
         architecture="x64",
         asset_name=asset.name,
         sha256=sha256(asset.read_bytes()).hexdigest(),
-        data_schema_version=4,
-        minimum_compatible_version="0.4.0",
+        data_schema_version=5,
+        minimum_compatible_version="0.5.0",
     )
-    assert manifest.data_schema_version == 4
+    assert manifest.data_schema_version == 5
     verify_asset(asset, manifest)
     asset.write_bytes(b"tampered")
     with pytest.raises(ValueError, match="SHA-256"):
