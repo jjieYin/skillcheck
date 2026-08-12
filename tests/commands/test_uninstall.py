@@ -6,7 +6,11 @@ from types import SimpleNamespace
 from typer.testing import CliRunner
 
 from skillcheck.app.main import app
-from skillcheck.commands.uninstall import _windows_removal_command, build_uninstall_context
+from skillcheck.commands.uninstall import (
+    _remove_configured_targets,
+    _windows_removal_command,
+    build_uninstall_context,
+)
 from skillcheck.lifecycle.uninstall import UninstallManager
 
 runner = CliRunner()
@@ -70,3 +74,18 @@ def test_windows_deferred_removal_command_also_cleans_owned_path_entry(tmp_path:
     assert "GetEnvironmentVariable('Path', 'User')" in command
     assert "SetEnvironmentVariable('Path'" in command
     assert str(tmp_path / "skillcheck" / "bin") in command
+
+
+def test_uninstall_target_option_preserves_other_agent_configuration(monkeypatch, tmp_path: Path) -> None:
+    state = tmp_path / "state"
+    config_path = state / "config.yaml"
+    state.mkdir(parents=True)
+    config_path.write_text(
+        "schema_version: 4\n"
+        "catalog:\n  initialized: false\n"
+        "targets:\n  configured: [codex, claude]\n",
+        encoding="utf-8",
+    )
+    _remove_configured_targets(config_path, ["codex"])
+    assert "claude" in config_path.read_text(encoding="utf-8")
+    assert "codex" not in config_path.read_text(encoding="utf-8")
