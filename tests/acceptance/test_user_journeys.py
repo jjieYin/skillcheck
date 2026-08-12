@@ -18,4 +18,9 @@ def test_install_print_config_and_agent_tool_contract(monkeypatch, tmp_path: Pat
 
     assert result.exit_code == 0
     assert "skillcheck" in result.stdout
-    assert TOOL_NAMES == {"skillcheck_analyze", "skillcheck_evidence", "skillcheck_save_review"}
+    assert TOOL_NAMES == {
+        "skillcheck_analyze",
+        "skillcheck_evidence",
+        "skillcheck_save_review",
+        "skillcheck_save_sync_group",
+    }
