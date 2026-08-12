@@ -83,8 +83,10 @@ class LocalVerifier:
             doctor = subprocess.run([str(executable), "doctor", "--json"], capture_output=True, text=True, check=False)
         except OSError as exc:
             return SmokeResult(False, f"候选版本无法启动：{type(exc).__name__}")
-        if version.returncode != 0 or doctor.returncode > 1:
+        if version.returncode != 0:
             return SmokeResult(False, "候选版本冒烟检查失败")
+        if doctor.returncode > 1:
+            return SmokeResult(True, "候选版本可启动；现有 Skillcheck 状态需要后续诊断")
         return SmokeResult(True, "候选版本自检通过")
 
 

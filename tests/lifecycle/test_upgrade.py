@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from skillcheck.lifecycle.upgrade import UpgradeManager
+from skillcheck.lifecycle.upgrade import LocalVerifier, UpgradeManager, VersionInstall
 
 
 class UpgradeContext:
@@ -53,3 +53,22 @@ def test_smoke_failure_keeps_current_and_removes_candidate(tmp_path: Path) -> No
 def test_rollback_switches_to_previous_verified_version(tmp_path: Path) -> None:
     result = UpgradeManager(UpgradeContext(tmp_path)).rollback()
     assert result.current_version == "0.2.0-alpha"
+
+
+def test_candidate_smoke_does_not_block_on_existing_state_diagnostics(tmp_path: Path, monkeypatch) -> None:
+    executable = tmp_path / "skillcheck.exe"
+    executable.touch()
+    results = iter([
+        SimpleNamespace(returncode=0),
+        SimpleNamespace(returncode=2),
+    ])
+
+    monkeypatch.setattr(
+        "skillcheck.lifecycle.upgrade.subprocess.run",
+        lambda *args, **kwargs: next(results),
+    )
+
+    result = LocalVerifier().smoke(VersionInstall("0.5.1", tmp_path))
+
+    assert result.ok is True
+    assert "后续诊断" in result.message

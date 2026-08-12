@@ -91,6 +91,32 @@ def test_doctor_accepts_complete_v5_catalog(tmp_path: Path) -> None:
     assert integrity.status.value == "ok"
 
 
+def test_doctor_warns_for_complete_migratable_v4_catalog(tmp_path: Path) -> None:
+    index = tmp_path / "index.db"
+    import sqlite3
+
+    with sqlite3.connect(index) as connection:
+        connection.executescript(CatalogDatabase._v4_schema_sql())
+    before = index.read_bytes()
+    context = SimpleNamespace(
+        python_version=(3, 11, 0),
+        path_shadowing=False,
+        config=SimpleNamespace(schema_version=4, catalog=SimpleNamespace(initialized=True)),
+        index_path=index,
+        reports_path=tmp_path,
+        registry=None,
+        mcp_available=True,
+    )
+
+    report = Doctor(context).run()
+
+    integrity = next(item for item in report.checks if item.code == "catalog.integrity")
+    assert integrity.status.value == "warning"
+    assert "compatible v0.4" in integrity.message
+    assert report.exit_code == 1
+    assert index.read_bytes() == before
+
+
 def test_doctor_reports_catalog_sync_warning_with_a_failure_message(tmp_path: Path) -> None:
     context = SimpleNamespace(
         python_version=(3, 11, 0),

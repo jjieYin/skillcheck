@@ -50,8 +50,20 @@ try {
     if ($LASTEXITCODE -ne 0 -or $versionOutput -notmatch "skillcheck $Version(?:\s|$)") {
         throw "版本冒烟检查失败：期望 skillcheck $Version，实际 $versionOutput"
     }
-    & $executable doctor --json | Out-Null
-    if ($LASTEXITCODE -gt 1) { throw "环境诊断冒烟检查失败。" }
+    # Doctor checks the user's existing state, so a stale or incomplete
+    # catalog must not prevent the release itself from being installed.
+    $doctorExitCode = 0
+    try {
+        & $executable doctor --json | Out-Null
+        $doctorExitCode = $LASTEXITCODE
+    } catch {
+        # A diagnostic process failure is advisory here; the version smoke
+        # check above already proved that the executable can start.
+        $doctorExitCode = 2
+    }
+    if ($doctorExitCode -gt 1) {
+        Write-Warning "现有 Skillcheck 状态需要迁移或修复；安装继续。安装完成后请运行 skillcheck doctor，必要时运行 skillcheck init。"
+    }
     if ([Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
         & $executable install
         if ($LASTEXITCODE -gt 2) { throw "Agent install 冒烟检查失败。" }
