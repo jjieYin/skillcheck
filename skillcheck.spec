@@ -2,12 +2,17 @@
 from PyInstaller.utils.hooks import collect_submodules
 
 
-hiddenimports = collect_submodules("mcp") + [
+hiddenimports = (
+    collect_submodules("mcp")
+    + collect_submodules("questionary")
+    + collect_submodules("prompt_toolkit")
+    + [
     "pydantic.deprecated.decorator",
     "skillcheck.reports",
     "questionary",
     "prompt_toolkit",
-]
+    ]
+)
 
 a = Analysis(
     ["src/skillcheck/app/main.py"],
