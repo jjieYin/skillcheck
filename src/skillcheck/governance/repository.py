@@ -8,7 +8,12 @@ from typing import TYPE_CHECKING
 
 from skillcheck.catalog.models import SkillSnapshot
 from skillcheck.catalog.repository import CatalogRepository
-from skillcheck.governance.models import CandidateGroupSummary, SourcePreflight
+from skillcheck.governance.models import (
+    CandidateGroupSummary,
+    SourcePreflight,
+    SyncGroup,
+    SyncGroupMember,
+)
 from skillcheck.models.audit import Finding
 
 if TYPE_CHECKING:
@@ -38,6 +43,109 @@ class GovernanceRepository:
 
     def __init__(self, catalog: CatalogRepository) -> None:
         self.catalog = catalog
+
+    def insert_sync_group(self, group: SyncGroup) -> None:
+        """Atomically persist a monitor-only group and its immutable member baselines."""
+        now = datetime.now(UTC).isoformat()
+        with self.catalog.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                for member in group.members:
+                    skill = connection.execute(
+                        "SELECT status, current_snapshot_id FROM skills WHERE skill_id = ?",
+                        (member.skill_id,),
+                    ).fetchone()
+                    if skill is None or skill["status"] != "active":
+                        raise ValueError(f"skill is not active: {member.skill_id}")
+                    if skill["current_snapshot_id"] != member.baseline_snapshot_id:
+                        raise ValueError(f"skill snapshot changed: {member.skill_id}")
+                    owner = connection.execute(
+                        "SELECT group_id FROM sync_group_members WHERE skill_id = ?",
+                        (member.skill_id,),
+                    ).fetchone()
+                    if owner is not None:
+                        raise ValueError(f"skill already belongs to sync group: {member.skill_id}")
+                connection.execute(
+                    """
+                    INSERT INTO sync_groups(
+                        group_id, name, authority_skill_id, policy, baseline_revision, status, created_at,
+                        updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        group.group_id,
+                        group.name,
+                        group.authority_skill_id,
+                        group.policy.value,
+                        group.baseline_revision,
+                        group.status.value,
+                        now,
+                        now,
+                    ),
+                )
+                for member in group.members:
+                    connection.execute(
+                        """
+                        INSERT INTO sync_group_members(
+                            group_id, skill_id, role, baseline_snapshot_id, baseline_content_hash
+                        ) VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (
+                            group.group_id,
+                            member.skill_id,
+                            member.role.value,
+                            member.baseline_snapshot_id,
+                            member.baseline_content_hash,
+                        ),
+                    )
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
+
+    def get_sync_group(self, group_id: str) -> SyncGroup | None:
+        with self.catalog.database.connect() as connection:
+            group = connection.execute("SELECT * FROM sync_groups WHERE group_id = ?", (group_id,)).fetchone()
+            if group is None:
+                return None
+            members = connection.execute(
+                """
+                SELECT skill_id, role, baseline_snapshot_id, baseline_content_hash
+                FROM sync_group_members
+                WHERE group_id = ?
+                ORDER BY CASE role WHEN 'authority' THEN 0 ELSE 1 END, skill_id
+                """,
+                (group_id,),
+            ).fetchall()
+        return SyncGroup(
+            group_id=group["group_id"],
+            name=group["name"],
+            authority_skill_id=group["authority_skill_id"],
+            policy=group["policy"],
+            baseline_revision=group["baseline_revision"],
+            status=group["status"],
+            members=[
+                SyncGroupMember(
+                    skill_id=member["skill_id"],
+                    role=member["role"],
+                    baseline_snapshot_id=member["baseline_snapshot_id"],
+                    baseline_content_hash=member["baseline_content_hash"],
+                )
+                for member in members
+            ],
+        )
+
+    def list_sync_groups(self) -> list[SyncGroup]:
+        with self.catalog.database.connect() as connection:
+            group_ids = [row["group_id"] for row in connection.execute(
+                "SELECT group_id FROM sync_groups ORDER BY group_id"
+            ).fetchall()]
+        return [group for group_id in group_ids if (group := self.get_sync_group(group_id)) is not None]
+
+    def delete_sync_group(self, group_id: str) -> None:
+        """Delete only group metadata; its member rows cascade and Skills remain intact."""
+        with self.catalog.database.connect() as connection:
+            connection.execute("DELETE FROM sync_groups WHERE group_id = ?", (group_id,))
 
     def save_run(
         self,

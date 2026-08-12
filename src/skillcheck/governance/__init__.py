@@ -8,7 +8,13 @@ from skillcheck.governance.models import (
     EvidenceSkill,
     Relation,
     SourcePreflight,
+    SyncGroup,
+    SyncGroupMember,
+    SyncGroupStatus,
+    SyncMemberRole,
+    SyncPolicy,
 )
+from skillcheck.governance.sync_groups import SyncGroupService
 
 __all__ = [
     "AnalyzeMode",
@@ -20,4 +26,10 @@ __all__ = [
     "GovernanceAnalyzer",
     "Relation",
     "SourcePreflight",
+    "SyncGroup",
+    "SyncGroupMember",
+    "SyncGroupService",
+    "SyncGroupStatus",
+    "SyncMemberRole",
+    "SyncPolicy",
 ]

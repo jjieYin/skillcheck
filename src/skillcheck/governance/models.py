@@ -85,3 +85,37 @@ class SourcePreflight(BaseModel):
     created_at: datetime
     expires_at: datetime
     deterministic_blockers: list[Finding] = Field(default_factory=list)
+
+
+class SyncPolicy(StrEnum):
+    MONITOR_ONLY = "monitor_only"
+
+
+class SyncMemberRole(StrEnum):
+    AUTHORITY = "authority"
+    MIRROR = "mirror"
+
+
+class SyncGroupStatus(StrEnum):
+    IN_SYNC = "IN_SYNC"
+    DRIFTED = "DRIFTED"
+    DIVERGED = "DIVERGED"
+    BROKEN = "BROKEN"
+    INVALID_MEMBER = "INVALID_MEMBER"
+
+
+class SyncGroupMember(BaseModel):
+    skill_id: str
+    role: SyncMemberRole
+    baseline_snapshot_id: str
+    baseline_content_hash: str
+
+
+class SyncGroup(BaseModel):
+    group_id: str
+    name: str
+    authority_skill_id: str
+    policy: SyncPolicy = SyncPolicy.MONITOR_ONLY
+    baseline_revision: str
+    status: SyncGroupStatus
+    members: list[SyncGroupMember]
