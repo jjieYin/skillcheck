@@ -19,29 +19,31 @@ EXPECTED_TABLES = {
     "reports",
     "source_preflights",
     "install_plans",
+    "sync_groups",
+    "sync_group_members",
     "skill_fts",
 }
 
 
-def test_initialize_creates_complete_v4_schema(tmp_path) -> None:
+def test_initialize_creates_complete_v5_schema(tmp_path) -> None:
     database = CatalogDatabase(tmp_path / "index.db")
 
     database.initialize()
 
-    assert database.schema_version() == 4
+    assert database.schema_version() == 5
     assert EXPECTED_TABLES <= database.table_names()
     with sqlite3.connect(database.path) as connection:
         columns = connection.execute("PRAGMA table_info(skill_fts)").fetchall()
     assert [column[1] for column in columns] == ["snapshot_id", "name", "description", "body"]
 
 
-def test_existing_v4_catalog_can_be_reopened(tmp_path) -> None:
+def test_existing_v5_catalog_can_be_reopened(tmp_path) -> None:
     database = CatalogDatabase(tmp_path / "index.db")
     database.initialize()
 
     database.initialize()
 
-    assert database.schema_version() == 4
+    assert database.schema_version() == 5
 
 
 def test_incompatible_existing_database_is_rejected_without_overwrite(tmp_path) -> None:
@@ -61,7 +63,7 @@ def test_existing_v4_catalog_with_placeholder_tables_is_rejected(tmp_path) -> No
         for table in EXPECTED_TABLES:
             if table == "schema_meta":
                 connection.execute("CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
-                connection.execute("INSERT INTO schema_meta(key, value) VALUES ('schema_version', '4')")
+                connection.execute("INSERT INTO schema_meta(key, value) VALUES ('schema_version', '5')")
             else:
                 connection.execute(f"CREATE TABLE {table} (placeholder TEXT)")
 
@@ -78,7 +80,7 @@ def test_existing_v4_catalog_with_matching_columns_but_missing_constraints_is_re
         for table, columns in expected_columns.items():
             definition = ", ".join(f"{column} TEXT" for column in columns)
             connection.execute(f"CREATE TABLE {table} ({definition})")
-        connection.execute("INSERT INTO schema_meta(key, value) VALUES ('schema_version', '4')")
+        connection.execute("INSERT INTO schema_meta(key, value) VALUES ('schema_version', '5')")
         connection.execute(
             "CREATE VIRTUAL TABLE skill_fts USING fts5("
             "snapshot_id UNINDEXED, name, description, body)"

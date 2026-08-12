@@ -7,15 +7,17 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
+from skillcheck.catalog import migrations
+
 
 class IncompatibleCatalogError(RuntimeError):
-    """Raised when a path contains data that is not a v0.4 catalog."""
+    """Raised when a path contains data that is not a compatible catalog."""
 
 
 class CatalogDatabase:
-    """Owns creation and compatibility checks for the immutable v0.4 schema."""
+    """Owns creation and compatibility checks for the v5 schema."""
 
-    schema_version_number = 4
+    schema_version_number = 5
 
     def __init__(self, path: Path | str) -> None:
         self.path = Path(path).expanduser()
@@ -28,7 +30,7 @@ class CatalogDatabase:
         return connection
 
     def initialize(self) -> None:
-        """Create a new catalog or verify that an existing one is v4."""
+        """Create a new catalog, migrate v4, or verify an existing v5 catalog."""
         if self.path.exists() and self.path.stat().st_size > 0:
             self._verify_existing_catalog()
             return
@@ -41,23 +43,45 @@ class CatalogDatabase:
                 row = connection.execute(
                     "SELECT value FROM schema_meta WHERE key = 'schema_version'"
                 ).fetchone()
-                if row is None or row["value"] != str(self.schema_version_number):
+                if row is None:
                     raise IncompatibleCatalogError(
-                        "Existing catalog is incompatible; reinitialize it for v0.4."
+                        "Existing catalog is incompatible; reinitialize it for v0.5."
+                    )
+                if row["value"] == "4":
+                    self._migrate_v4_to_v5(connection)
+                elif row["value"] != str(self.schema_version_number):
+                    raise IncompatibleCatalogError(
+                        "Existing catalog is incompatible; reinitialize it for v0.5."
                     )
                 if not self._expected_tables() <= self._table_names(connection):
                     raise IncompatibleCatalogError(
-                        "Existing catalog is incomplete; reinitialize it for v0.4."
+                        "Existing catalog is incomplete; reinitialize it for v0.5."
                     )
                 if not self._has_expected_structure(connection):
                     raise IncompatibleCatalogError(
-                        "Existing catalog has an incompatible schema; reinitialize it for v0.4."
+                        "Existing catalog has an incompatible schema; reinitialize it for v0.5."
                     )
         except IncompatibleCatalogError:
             raise
         except sqlite3.DatabaseError as error:
             raise IncompatibleCatalogError(
-                "Existing catalog is invalid; reinitialize it for v0.4."
+                "Existing catalog is invalid; reinitialize it for v0.5."
+            ) from error
+
+    @staticmethod
+    def _migrate_v4_to_v5(connection: sqlite3.Connection) -> None:
+        statements = [
+            statement.strip() for statement in migrations.V4_TO_V5_SQL.split(";") if statement.strip()
+        ]
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            for statement in statements:
+                connection.execute(statement)
+            connection.commit()
+        except sqlite3.DatabaseError as error:
+            connection.rollback()
+            raise IncompatibleCatalogError(
+                "Catalog migration to v0.5 failed; existing catalog was not changed."
             ) from error
 
     def _create_schema(self) -> None:
@@ -160,6 +184,8 @@ class CatalogDatabase:
             "reports",
             "source_preflights",
             "install_plans",
+            "sync_groups",
+            "sync_group_members",
             "skill_fts",
         }
 
@@ -170,6 +196,7 @@ class CatalogDatabase:
             "idx_snapshots_skill",
             "idx_group_members_snapshot",
             "idx_evidence_group",
+            "idx_sync_group_members_skill",
         }
 
     @staticmethod
@@ -263,5 +290,22 @@ class CatalogDatabase:
                 "plan_json",
                 "created_at",
                 "updated_at",
+            ],
+            "sync_groups": [
+                "group_id",
+                "name",
+                "authority_skill_id",
+                "policy",
+                "baseline_revision",
+                "status",
+                "created_at",
+                "updated_at",
+            ],
+            "sync_group_members": [
+                "group_id",
+                "skill_id",
+                "role",
+                "baseline_snapshot_id",
+                "baseline_content_hash",
             ],
         }

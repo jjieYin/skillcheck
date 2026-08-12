@@ -3,7 +3,7 @@ CREATE TABLE schema_meta (
     value TEXT NOT NULL
 );
 
-INSERT INTO schema_meta(key, value) VALUES ('schema_version', '4');
+INSERT INTO schema_meta(key, value) VALUES ('schema_version', '5');
 
 CREATE TABLE library_roots (
     root_id TEXT PRIMARY KEY,
@@ -139,10 +139,32 @@ CREATE TABLE install_plans (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE sync_groups (
+    group_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    authority_skill_id TEXT NOT NULL REFERENCES skills(skill_id),
+    policy TEXT NOT NULL CHECK(policy = 'monitor_only'),
+    baseline_revision TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE sync_group_members (
+    group_id TEXT NOT NULL REFERENCES sync_groups(group_id) ON DELETE CASCADE,
+    skill_id TEXT NOT NULL REFERENCES skills(skill_id),
+    role TEXT NOT NULL CHECK(role IN ('authority', 'mirror')),
+    baseline_snapshot_id TEXT NOT NULL REFERENCES skill_snapshots(snapshot_id),
+    baseline_content_hash TEXT NOT NULL,
+    PRIMARY KEY(group_id, skill_id),
+    UNIQUE(skill_id)
+);
+
 CREATE INDEX idx_skills_root_path ON skills(root_id, relative_path);
 CREATE INDEX idx_snapshots_skill ON skill_snapshots(skill_id, indexed_at DESC);
 CREATE INDEX idx_group_members_snapshot ON group_members(snapshot_id);
 CREATE INDEX idx_evidence_group ON evidence(group_id);
+CREATE INDEX idx_sync_group_members_skill ON sync_group_members(skill_id);
 
 CREATE VIRTUAL TABLE skill_fts USING fts5(
     snapshot_id UNINDEXED,
