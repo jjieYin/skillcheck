@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from skillcheck.catalog.models import SkillStatus
+from skillcheck.catalog.models import SkillSnapshot, SkillStatus
 from skillcheck.catalog.repository import CatalogRepository
 from skillcheck.governance.models import (
     SyncGroup,
@@ -12,6 +12,29 @@ from skillcheck.governance.models import (
     SyncPolicy,
 )
 from skillcheck.governance.repository import GovernanceRepository
+
+
+def calculate_status(
+    group: SyncGroup, current: dict[str, SkillSnapshot | None]
+) -> SyncGroupStatus:
+    """Classify a group from its immutable baseline and current snapshots."""
+    authority = current.get(group.authority_skill_id)
+    if authority is None or authority.status is SkillStatus.MISSING:
+        return SyncGroupStatus.BROKEN
+    if any(item is None or item.status is SkillStatus.INVALID for item in current.values()):
+        return SyncGroupStatus.INVALID_MEMBER
+    if all(item.content_hash == authority.content_hash for item in current.values() if item):
+        return SyncGroupStatus.IN_SYNC
+    baseline = {member.skill_id: member.baseline_content_hash for member in group.members}
+    authority_changed = authority.content_hash != baseline[group.authority_skill_id]
+    mirror_changed = any(
+        current[member.skill_id].content_hash != member.baseline_content_hash
+        for member in group.members
+        if member.role is SyncMemberRole.MIRROR and current.get(member.skill_id)
+    )
+    return SyncGroupStatus.DIVERGED if mirror_changed else (
+        SyncGroupStatus.DRIFTED if authority_changed else SyncGroupStatus.DIVERGED
+    )
 
 
 class SyncGroupService:
@@ -66,3 +89,19 @@ class SyncGroupService:
 
     def remove(self, group_id: str) -> None:
         self.repository.delete_sync_group(group_id)
+
+    def get(self, group_id: str) -> SyncGroup | None:
+        group = self.repository.get_sync_group(group_id)
+        return self._refresh_status(group) if group is not None else None
+
+    def list(self) -> list[SyncGroup]:
+        return [self._refresh_status(group) for group in self.repository.list_sync_groups()]
+
+    def _refresh_status(self, group: SyncGroup) -> SyncGroup:
+        current = {
+            member.skill_id: self.repository.catalog.get_current_skill(member.skill_id)
+            for member in group.members
+        }
+        status = calculate_status(group, current)
+        self.repository.update_sync_group_status(group.group_id, status)
+        return group.model_copy(update={"status": status})

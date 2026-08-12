@@ -13,6 +13,7 @@ from skillcheck.governance.models import (
     SourcePreflight,
     SyncGroup,
     SyncGroupMember,
+    SyncGroupStatus,
 )
 from skillcheck.models.audit import Finding
 
@@ -141,6 +142,14 @@ class GovernanceRepository:
                 "SELECT group_id FROM sync_groups ORDER BY group_id"
             ).fetchall()]
         return [group for group_id in group_ids if (group := self.get_sync_group(group_id)) is not None]
+
+    def update_sync_group_status(self, group_id: str, status: SyncGroupStatus) -> None:
+        """Refresh derived state without modifying the group's immutable baselines."""
+        with self.catalog.database.connect() as connection:
+            connection.execute(
+                "UPDATE sync_groups SET status = ?, updated_at = ? WHERE group_id = ?",
+                (status.value, datetime.now(UTC).isoformat(), group_id),
+            )
 
     def delete_sync_group(self, group_id: str) -> None:
         """Delete only group metadata; its member rows cascade and Skills remain intact."""
