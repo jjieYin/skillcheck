@@ -31,6 +31,21 @@ def test_server_registers_exact_tool_names() -> None:
     assert {tool.name for tool in registered} == TOOL_NAMES
 
 
+def test_analyze_schema_does_not_expose_a_skill_count_limit() -> None:
+    tools = SimpleNamespace(
+        analyze=lambda *args: {},
+        evidence=lambda *args: {},
+        save_review=lambda *args: {},
+        save_sync_group=lambda *args: {},
+    )
+    server = create_server(tools)
+
+    registered = asyncio.run(server.list_tools())
+    analyze = next(tool for tool in registered if tool.name == "skillcheck_analyze")
+
+    assert "limit" not in analyze.inputSchema["properties"]
+
+
 def test_stdio_stops_runtime_when_server_raises(monkeypatch, tmp_path) -> None:
     calls: list[str] = []
 

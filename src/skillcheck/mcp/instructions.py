@@ -8,6 +8,8 @@ sync groups, or Skill governance.
 Do not call Skillcheck for ordinary coding, debugging, testing, writing,
 repository exploration, or tasks that merely use an already-selected Skill.
 
+Every skillcheck_analyze call analyzes the complete indexed library or complete validated
+incoming source. Do not use a Skill-count limit. Evidence remains redacted and paginated.
 For a relevant request, call skillcheck_analyze first. If no candidate groups are returned,
 stop: Do not call skillcheck_evidence and do not save an empty
 review. Otherwise read bounded evidence, explain the decision, and save only

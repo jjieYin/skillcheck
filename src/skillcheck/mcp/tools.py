@@ -15,7 +15,7 @@ from skillcheck.models.governance import GroupDecision
 
 
 class SkillcheckMcpTools:
-    """Expose bounded local analysis; the connected Agent supplies judgment."""
+    """Expose complete local analysis; the connected Agent supplies judgment."""
 
     def __init__(
         self,
@@ -33,7 +33,6 @@ class SkillcheckMcpTools:
         mode: str,
         source: str | None = None,
         scope: str = "all",
-        limit: int = 20,
         trigger_source: str = "agent_intent",
     ) -> dict[str, object]:
         try:
@@ -44,8 +43,6 @@ class SkillcheckMcpTools:
             raise ValueError("source mode requires a source")
         if selected_mode is AnalyzeMode.LIBRARY and source:
             raise ValueError("library mode does not accept a source")
-        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
-            raise ValueError("limit must be between 1 and 100")
         self.runtime.before_query()
         analyzer = self._governance()
         try:
@@ -53,7 +50,6 @@ class SkillcheckMcpTools:
                 selected_mode,
                 source=source,
                 scope=scope,
-                limit=limit,
                 trigger_source=trigger_source,
             )
         except TypeError as error:
@@ -61,7 +57,7 @@ class SkillcheckMcpTools:
             # integrations while the built-in analyzer records the source.
             if "trigger_source" not in str(error):
                 raise
-            result = analyzer.analyze(selected_mode, source=source, scope=scope, limit=limit)
+            result = analyzer.analyze(selected_mode, source=source, scope=scope)
         return result.model_dump(mode="json")
 
     def evidence(

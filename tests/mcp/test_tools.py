@@ -19,9 +19,9 @@ class Analyzer:
     def __init__(self) -> None:
         self.calls: list[tuple[str, object]] = []
 
-    def analyze(self, mode, *, source=None, scope="all", limit=20):
-        self.calls.append(("analyze", (mode, source, scope, limit)))
-        return SimpleNamespace(model_dump=lambda **_: {"mode": str(mode), "source": source, "limit": limit})
+    def analyze(self, mode, *, source=None, scope="all", trigger_source="agent_intent"):
+        self.calls.append(("analyze", (mode, source, scope, trigger_source)))
+        return SimpleNamespace(model_dump=lambda **_: {"mode": str(mode), "source": source})
 
     def evidence(self, run_id, group_id, *, page=1, include_body=False):
         self.calls.append(("evidence", (run_id, group_id, page, include_body)))
@@ -98,15 +98,32 @@ def stale_mirror_run(mirror_run):
 def test_analyze_validates_source_mode_and_returns_json() -> None:
     tools, analyzer, _, calls = _tools()
 
-    result = tools.analyze("library", None, "all", 20)
+    result = tools.analyze("library")
 
-    assert result == {"mode": str(AnalyzeMode.LIBRARY), "source": None, "limit": 20}
+    assert result == {"mode": str(AnalyzeMode.LIBRARY), "source": None}
     assert calls == ["before_query"]
-    assert analyzer.calls == [("analyze", (AnalyzeMode.LIBRARY, None, "all", 20))]
+    assert analyzer.calls == [("analyze", (AnalyzeMode.LIBRARY, None, "all", "agent_intent"))]
     with pytest.raises(ValueError, match="source"):
-        tools.analyze("source", None, "all", 20)
+        tools.analyze("source")
     with pytest.raises(ValueError, match="mode"):
-        tools.analyze("unknown", None, "all", 20)
+        tools.analyze("unknown")
+
+
+def test_library_analysis_defaults_to_full_catalog() -> None:
+    tools, analyzer, _, calls = _tools()
+
+    tools.analyze("library")
+
+    assert calls == ["before_query"]
+    assert analyzer.calls == [("analyze", (AnalyzeMode.LIBRARY, None, "all", "agent_intent"))]
+
+
+def test_source_analysis_keeps_a_bounded_default() -> None:
+    tools, analyzer, _, _ = _tools()
+
+    tools.analyze("source", "incoming-skill")
+
+    assert analyzer.calls == [("analyze", (AnalyzeMode.SOURCE, "incoming-skill", "all", "agent_intent"))]
 
 
 def test_evidence_validates_page_and_returns_json() -> None:

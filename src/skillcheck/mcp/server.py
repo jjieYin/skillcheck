@@ -35,10 +35,9 @@ def create_server(tools: SkillcheckMcpTools) -> FastMCP:
         mode: str,
         source: str | None = None,
         scope: str = "all",
-        limit: int = 20,
         trigger_source: Literal["explicit_user", "agent_intent", "tool_chain"] = "agent_intent",
     ) -> dict[str, object]:
-        return tools.analyze(mode, source, scope, limit, trigger_source)
+        return tools.analyze(mode, source, scope, trigger_source)
 
     @server.tool(
         name="skillcheck_evidence",
