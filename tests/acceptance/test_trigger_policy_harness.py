@@ -41,5 +41,8 @@ def test_harness_allows_evidence_after_non_empty_analysis(tmp_path: Path) -> Non
 
 
 def test_harness_ignores_unrelated_tool_names() -> None:
-    trace = ['{"name":"other_tool"}', '{"name":"other_tool"}']
+    trace = [
+        '{"message":"the prompt mentioned skillcheck_analyze but no tool was called"}',
+        '{"name":"other_tool"}',
+    ]
     assert observed_policy(trace) == "no_call"

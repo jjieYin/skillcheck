@@ -86,9 +86,13 @@ def _tool_names(value: Any) -> list[str]:
 
 def _record_tools(record: _TraceRecord) -> list[str]:
     found = _tool_names(record.value)
-    for match in _TOOL_RE.findall(record.raw):
-        if match not in found:
-            found.append(match)
+    # For valid JSON, inspect event fields rather than arbitrary message text;
+    # a prompt mentioning a tool must not count as an invocation.  Plain text
+    # lines are supported as a conservative fallback for CLIs that mix output.
+    if record.value is None:
+        for match in _TOOL_RE.findall(record.raw):
+            if match not in found:
+                found.append(match)
     return found
 
 
