@@ -59,6 +59,14 @@ The installer detects Codex CLI, Claude Code, and Cursor, shows the files it wil
 
 This step connects the Agent. It does not delete, rewrite, or install your Skills.
 
+The first interactive install preselects detected Agents. On later runs the
+checkboxes show the exact selection saved last time: Space toggles a row and
+Enter applies the final list. An unchecked Agent is removed from Skillcheck's
+MCP entry and instruction block, while other user-owned configuration remains
+untouched. `--yes` skips only the final confirmation; it never silently selects
+all detected Agents. In a non-interactive terminal, pass an explicit
+`--target`.
+
 To select targets explicitly:
 
 ```sh
@@ -74,6 +82,10 @@ skillcheck init
 ```
 
 Skillcheck discovers the standard local roots and recursively indexes every `SKILL.md` below them. You can add extra roots during initialization:
+
+Every matching `SKILL.md` below every configured root is indexed, regardless of
+nesting depth. Agent connection scope and Skill scan scope are independent: a
+connected Agent does not limit which personal Skills are audited.
 
 ```sh
 skillcheck init ~/my-skills ./team-skills
@@ -132,6 +144,11 @@ Skillcheck uses layered, explainable analysis:
 The base installation works offline with a deterministic feature-hash embedding. An optional local sentence-transformer backend can be configured for stronger semantic retrieval.
 
 These steps produce candidates and evidence. They do not decide that a file must be deleted.
+
+Library analysis is complete by default. MCP `skillcheck_analyze` does not take
+a hidden top-N limit; evidence pagination limits only how much evidence is
+returned per page, not how many Skills are analyzed. Direct library APIs may
+still accept an explicit limit for compatibility with scripts.
 
 ### Agent review
 
