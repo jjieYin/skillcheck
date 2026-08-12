@@ -5,6 +5,7 @@ import typer
 from skillcheck import __version__
 from skillcheck.commands.add import register as register_add
 from skillcheck.commands.doctor import register as register_doctor
+from skillcheck.commands.groups import register as register_groups
 from skillcheck.commands.init import register as register_init
 from skillcheck.commands.install import register as register_install
 from skillcheck.commands.report import register as register_report
@@ -42,6 +43,7 @@ register_report(app)
 register_add(app)
 register_serve(app)
 register_doctor(app)
+register_groups(app)
 register_upgrade(app)
 register_uninstall(app)
 register_init(app)
