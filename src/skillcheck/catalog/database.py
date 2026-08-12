@@ -75,10 +75,18 @@ class CatalogDatabase:
         ]
         try:
             connection.execute("BEGIN IMMEDIATE")
+            if not CatalogDatabase._has_expected_v4_structure(connection):
+                raise IncompatibleCatalogError(
+                    "Existing catalog has an incompatible v0.4 schema; reinitialize it."
+                )
             for statement in statements:
                 connection.execute(statement)
+            if not CatalogDatabase._has_expected_structure(connection):
+                raise IncompatibleCatalogError(
+                    "Catalog migration to v0.5 produced an incompatible schema."
+                )
             connection.commit()
-        except sqlite3.DatabaseError as error:
+        except (IncompatibleCatalogError, sqlite3.DatabaseError) as error:
             connection.rollback()
             raise IncompatibleCatalogError(
                 "Catalog migration to v0.5 failed; existing catalog was not changed."
@@ -127,9 +135,27 @@ class CatalogDatabase:
 
     @classmethod
     def _has_expected_structure(cls, connection: sqlite3.Connection) -> bool:
-        actual = cls._schema_objects(connection)
-        expected = cls._canonical_schema_objects()
-        for object_name in cls._expected_schema_objects():
+        return cls._has_expected_objects(
+            connection,
+            cls._expected_schema_objects(),
+            cls._schema_sql(),
+        )
+
+    @classmethod
+    def _has_expected_v4_structure(cls, connection: sqlite3.Connection) -> bool:
+        return cls._has_expected_objects(
+            connection,
+            cls._expected_v4_schema_objects(),
+            cls._v4_schema_sql(),
+        )
+
+    @classmethod
+    def _has_expected_objects(
+        cls, connection: sqlite3.Connection, object_names: set[str], schema: str
+    ) -> bool:
+        actual = cls._schema_objects(connection, object_names)
+        expected = cls._canonical_schema_objects(schema, object_names)
+        for object_name in object_names:
             actual_object = actual.get(object_name)
             expected_object = expected.get(object_name)
             if actual_object is None or expected_object is None:
@@ -143,23 +169,45 @@ class CatalogDatabase:
         return True
 
     @classmethod
-    def _canonical_schema_objects(cls) -> dict[str, sqlite3.Row]:
+    def _canonical_schema_objects(
+        cls, schema: str, object_names: set[str]
+    ) -> dict[str, sqlite3.Row]:
         with sqlite3.connect(":memory:") as connection:
             connection.row_factory = sqlite3.Row
-            connection.executescript(cls._schema_sql())
-            return cls._schema_objects(connection)
+            connection.executescript(schema)
+            return cls._schema_objects(connection, object_names)
 
     @classmethod
     def _schema_sql(cls) -> str:
         return files("skillcheck.catalog").joinpath("schema.sql").read_text(encoding="utf-8")
+
+    @classmethod
+    def _v4_schema_sql(cls) -> str:
+        schema = cls._schema_sql()
+        schema = schema.replace(
+            "INSERT INTO schema_meta(key, value) VALUES ('schema_version', '5');",
+            "INSERT INTO schema_meta(key, value) VALUES ('schema_version', '4');",
+        )
+        schema = re.sub(
+            r"\nCREATE TABLE sync_groups \(.*?\n\);\n\nCREATE TABLE sync_group_members \(.*?\n\);\n",
+            "\n",
+            schema,
+            flags=re.DOTALL,
+        )
+        return schema.replace(
+            "CREATE INDEX idx_sync_group_members_skill ON sync_group_members(skill_id);\n",
+            "",
+        )
 
     @staticmethod
     def _normalize_definition(definition: str | None) -> str:
         return re.sub(r"\s+", "", definition or "").lower()
 
     @classmethod
-    def _schema_objects(cls, connection: sqlite3.Connection) -> dict[str, sqlite3.Row]:
-        object_names = tuple(cls._expected_schema_objects())
+    def _schema_objects(
+        cls, connection: sqlite3.Connection, expected_objects: set[str] | None = None
+    ) -> dict[str, sqlite3.Row]:
+        object_names = tuple(expected_objects or cls._expected_schema_objects())
         placeholders = ",".join("?" for _ in object_names)
         rows = connection.execute(
             "SELECT name, type, sql FROM sqlite_master WHERE name IN " f"({placeholders})",
@@ -308,4 +356,12 @@ class CatalogDatabase:
                 "baseline_snapshot_id",
                 "baseline_content_hash",
             ],
+        }
+
+    @classmethod
+    def _expected_v4_schema_objects(cls) -> set[str]:
+        return cls._expected_schema_objects() - {
+            "sync_groups",
+            "sync_group_members",
+            "idx_sync_group_members_skill",
         }

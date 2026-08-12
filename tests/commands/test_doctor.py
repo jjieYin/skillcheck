@@ -57,7 +57,7 @@ def test_doctor_fix_initializes_a_real_catalog_only_after_confirmation(monkeypat
     assert result.exit_code in {0, 1}
     config = load_config(config_path, create=False)
     assert config.catalog.initialized is True
-    assert CatalogDatabase(config.catalog.database_path).schema_version() == 4
+    assert CatalogDatabase(config.catalog.database_path).schema_version() == 5
 
 
 def test_doctor_context_reads_latest_sync_warning_without_writing_catalog(monkeypatch, tmp_path: Path) -> None:

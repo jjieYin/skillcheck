@@ -54,3 +54,31 @@ def test_migration_rolls_back_when_v5_table_creation_fails(v4_catalog, monkeypat
         assert connection.execute(
             "SELECT value FROM schema_meta WHERE key='schema_version'"
         ).fetchone()[0] == "4"
+        assert "sync_groups" not in _schema_object_names(connection)
+        assert "sync_group_members" not in _schema_object_names(connection)
+        assert "idx_sync_group_members_skill" not in _schema_object_names(connection)
+
+
+def test_migration_rolls_back_when_v4_baseline_has_drifted(v4_catalog) -> None:
+    with sqlite3.connect(v4_catalog) as connection:
+        connection.execute("DROP INDEX idx_evidence_group")
+
+    with pytest.raises(IncompatibleCatalogError):
+        CatalogDatabase(v4_catalog).initialize()
+
+    with sqlite3.connect(v4_catalog) as connection:
+        assert connection.execute(
+            "SELECT value FROM schema_meta WHERE key='schema_version'"
+        ).fetchone()[0] == "4"
+        assert "sync_groups" not in _schema_object_names(connection)
+        assert "sync_group_members" not in _schema_object_names(connection)
+        assert "idx_sync_group_members_skill" not in _schema_object_names(connection)
+
+
+def _schema_object_names(connection: sqlite3.Connection) -> set[str]:
+    return {
+        row[0]
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type IN ('table', 'index', 'virtual table')"
+        )
+    }

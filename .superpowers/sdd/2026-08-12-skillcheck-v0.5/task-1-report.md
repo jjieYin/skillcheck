@@ -33,3 +33,22 @@ schema-version update, so the original catalog remains v4.
 The application configuration schema remains v4 by design in this task; this
 change concerns only the catalog SQLite schema. The outstanding full-suite test
 expectation is the only known follow-up compatibility update.
+
+## Review follow-up
+
+The migration now validates the complete v4 baseline inside the same
+`BEGIN IMMEDIATE` transaction before applying v5 DDL. It also validates the
+complete v5 schema before commit. Thus a drifted v4 catalog, failed DDL, or
+failed v5 validation rolls back without leaving sync-group tables, the related
+index, or a v5 schema marker behind.
+
+The rollback tests now assert the absence of both tables and the index. The
+doctor command test has been updated to assert that a newly initialized catalog
+is v5.
+
+### Follow-up tests
+
+- PASS: catalog schema, migration, and doctor coverage — 15 passed.
+- PASS: full suite — 222 passed, 2 skipped.
+- Known non-failing warning: a third-party Pydantic incomplete forward-reference
+  warning in `tests/mcp/test_contract.py`.
