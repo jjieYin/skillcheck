@@ -42,7 +42,12 @@ exec "${TARGET}/skillcheck" "\$@"
 EOF
 chmod +x "${BIN}/skillcheck"
 case ":${PATH:-}:" in *":${BIN}:"*) ;; *) echo "请将 ${BIN} 加入 PATH" ;; esac
-"${BIN}/skillcheck" version
+VERSION_OUTPUT="$(${BIN}/skillcheck version)"
+printf '%s\n' "$VERSION_OUTPUT"
+printf '%s\n' "$VERSION_OUTPUT" | grep -F "skillcheck ${VERSION}" >/dev/null || {
+  echo "版本冒烟检查失败：期望 skillcheck ${VERSION}，实际 ${VERSION_OUTPUT}" >&2
+  exit 1
+}
 if [ -t 0 ] && [ -t 1 ]; then
   "${BIN}/skillcheck" install
 else

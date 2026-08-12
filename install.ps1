@@ -46,8 +46,10 @@ try {
     $executable = Join-Path $versionDir "skillcheck.exe"
     if (-not (Test-Path $executable)) { throw "发布包缺少 skillcheck.exe。" }
 
-    & $executable version | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "版本冒烟检查失败。" }
+    $versionOutput = (& $executable version | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or $versionOutput -notmatch "skillcheck $Version(?:\s|$)") {
+        throw "版本冒烟检查失败：期望 skillcheck $Version，实际 $versionOutput"
+    }
     & $executable doctor --json | Out-Null
     if ($LASTEXITCODE -gt 1) { throw "环境诊断冒烟检查失败。" }
     if ([Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
