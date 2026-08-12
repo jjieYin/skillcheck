@@ -78,11 +78,13 @@ def build_doctor_context(config_path: Path | None):
 
     def rewrite() -> None:
         selected = config.targets.configured
-        if not selected:
-            selected = [item.agent.value for item in pipeline.discover().agents if item.cli_path or item.config_path]
         if selected:
-            preview = pipeline.preview(selected, scope=config.targets.scope)
-            result = pipeline.apply(preview, confirmed=True)
+            preview = pipeline.preview_reconcile(
+                selected,
+                selected,
+                scope=config.targets.scope,
+            )
+            result = pipeline.apply_reconcile(preview, confirmed=True)
             if all(result.validations):
                 config.targets.configured = list(dict.fromkeys(selected))
                 config.targets.last_validated = True

@@ -122,6 +122,9 @@ class McpTarget:
     def preview_instructions(self, scope: str, instructions: str) -> InstructionChange:
         return InstructionManager(self.instruction_path_for(scope)).preview(instructions)
 
+    def preview_uninstall_instructions(self, scope: str) -> InstructionChange:
+        return InstructionManager(self.instruction_path_for(scope)).preview_uninstall()
+
     def install_instructions(self, change: InstructionChange) -> InstructionWriteResult:
         return InstructionManager(change.path).apply(change)
 
@@ -130,6 +133,9 @@ class McpTarget:
 
     def validate_instructions(self, scope: str) -> bool:
         return InstructionManager(self.instruction_path_for(scope)).validate()
+
+    def validate_instructions_absent(self, scope: str) -> bool:
+        return InstructionManager(self.instruction_path_for(scope)).validate_absent()
 
     def _has_entry(self, path: Path) -> bool:
         document, _, _ = load_document(path, self.format)
@@ -155,6 +161,31 @@ class McpTarget:
             after_text=after_text,
             summary=summary,
             changed=changed,
+        )
+
+    def preview_uninstall(self, scope: str) -> ConfigChange:
+        """Build a change that removes only Skillcheck's MCP entry."""
+
+        path = self._path_for(scope)
+        document, text, before_hash = load_document(path, self.format)
+        existing = read_mcp_entry(document, self.format, "skillcheck")
+        if existing is None:
+            return ConfigChange(
+                agent=self.agent,
+                path=path,
+                before_hash=before_hash,
+                after_text=text,
+                summary=("skillcheck MCP entry is already absent",),
+                changed=False,
+            )
+        write_mcp_entry(document, self.format, "skillcheck", None)
+        return ConfigChange(
+            agent=self.agent,
+            path=path,
+            before_hash=before_hash,
+            after_text=render_document(document, self.format),
+            summary=(f"remove {self.agent.value} skillcheck MCP entry",),
+            changed=True,
         )
 
     def install(self, change: ConfigChange) -> ConfigWriteResult:
@@ -202,3 +233,10 @@ class McpTarget:
             return False
         document, _, _ = load_document(path, self.format)
         return mcp_entry_matches(read_mcp_entry(document, self.format, "skillcheck"), self._entry())
+
+    def validate_absent(self, scope: str) -> bool:
+        path = self._path_for(scope)
+        if not path.exists():
+            return True
+        document, _, _ = load_document(path, self.format)
+        return read_mcp_entry(document, self.format, "skillcheck") is None

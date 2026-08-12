@@ -60,13 +60,13 @@ def _config_path(path: Path | None) -> Path:
 def _persist_configured_targets(
     config_path: Path | None, selected: list[str], location: Literal["global", "project"]
 ) -> None:
-    """Record only an installation that has passed every integration validation."""
+    """Persist the exact confirmed selection after every integration validates."""
 
     loaded = load_config(config_path, create=False)
-    configured = list(dict.fromkeys([*loaded.targets.configured, *selected]))
-    loaded.targets.configured = configured
+    loaded.targets.configured = list(dict.fromkeys(selected))
+    loaded.targets.selection_initialized = True
     loaded.targets.scope = location
-    loaded.targets.last_validated = True
+    loaded.targets.last_validated = bool(selected)
     save_config(_config_path(config_path), loaded)
 
 
@@ -91,7 +91,10 @@ def _selected_targets(pipeline: InstallPipeline, requested: str) -> list[str]:
 def register(app: typer.Typer) -> None:
     @app.command("install")
     def install(
-        target: Annotated[str, typer.Option("--target")] = "auto",
+        target: Annotated[
+            str | None,
+            typer.Option("--target", help="Explicit targets, e.g. codex,claude; omit for checkbox picker"),
+        ] = None,
         location: Annotated[
             Literal["global", "project"], typer.Option("--location")
         ] = "global",
@@ -115,32 +118,56 @@ def register(app: typer.Typer) -> None:
                 typer.echo(change.after_text, nl=False)
                 return
 
-            if target.casefold() != "auto" or yes or not sys.stdin.isatty():
+            if target is not None:
                 selected = _selected_targets(pipeline, target)
+            elif not sys.stdin.isatty():
+                raise ValueError(
+                    "interactive terminal required when --target is omitted; "
+                    "use --target codex,claude or --target all"
+                )
             else:
                 picker_result = AgentPicker().choose(
                     pipeline.discover().agents,
                     configured=loaded.targets.configured,
+                    selection_initialized=loaded.targets.selection_initialized,
                 )
                 if picker_result.cancelled:
                     typer.echo("Cancelled; no files were changed.")
                     return
                 selected = picker_result.selected
             if not selected:
-                typer.echo(
-                    "No Agent target was selected or detected. "
-                    "Use --target all to configure all supported Agents."
+                if not loaded.targets.configured:
+                    typer.echo(
+                        "No Agent target was selected. "
+                        "Use the checkbox picker or --target codex,claude."
+                    )
+                    return
+                confirmed_disconnect = yes or (
+                    sys.stdin.isatty()
+                    and typer.confirm("This will disconnect all configured Agents. Continue?")
                 )
-                return
-            preview = pipeline.preview(selected, scope=location)
+                if not confirmed_disconnect:
+                    typer.echo("Cancelled; no files were changed.")
+                    return
+            preview = pipeline.preview_reconcile(
+                loaded.targets.configured,
+                selected,
+                scope=location,
+            )
+            typer.echo(
+                "Selection: "
+                f"added={','.join(preview.added) or '-'}, "
+                f"kept={','.join(preview.kept) or '-'}, "
+                f"removed={','.join(preview.removed) or '-'}"
+            )
             for change in preview.changes:
-                typer.echo(f"- {change.kind}: {change.path}")
+                typer.echo(f"- {change.operation} {change.kind}: {change.path}")
             confirmed = yes or (sys.stdin.isatty() and typer.confirm("Apply these Skillcheck changes?"))
             if not confirmed:
-                pipeline.apply(preview, confirmed=False)
+                pipeline.apply_reconcile(preview, confirmed=False)
                 typer.echo("Cancelled; no files were changed.")
                 return
-            result = pipeline.apply(
+            result = pipeline.apply_reconcile(
                 preview,
                 confirmed=True,
                 on_success=lambda: _persist_configured_targets(config, selected, location),

@@ -115,3 +115,58 @@ def test_config_persistence_failure_rolls_back_written_files(tmp_path: Path) -> 
 
     assert not target.global_config.exists()
     assert not target.global_instructions.exists()
+
+
+def test_reconcile_adds_keeps_and_removes_exact_agents(tmp_path: Path) -> None:
+    codex = _target(AgentId.CODEX, tmp_path)
+    cursor = _target(AgentId.CURSOR, tmp_path)
+    codex.global_config.parent.mkdir(parents=True)
+    codex.global_config.write_text(
+        'other = true\n\n[mcp_servers.skillcheck]\n'
+        'command = "skillcheck"\nargs = ["serve", "--mcp"]\n',
+        encoding="utf-8",
+    )
+    codex.global_instructions.write_text(
+        "User instructions.\n<!-- SKILLCHECK_START -->\nold\n<!-- SKILLCHECK_END -->\n",
+        encoding="utf-8",
+    )
+    pipeline = InstallPipeline(
+        TargetRegistry([codex, cursor]),
+        smoke_check=lambda: "smoke passed",
+    )
+
+    preview = pipeline.preview_reconcile(
+        ["codex", "cursor"],
+        ["cursor"],
+        scope="global",
+    )
+    assert preview.added == []
+    assert preview.kept == ["cursor"]
+    assert preview.removed == ["codex"]
+    result = pipeline.apply_reconcile(preview, confirmed=True)
+
+    assert len(result.changed_files) == 4
+    codex_config = codex.global_config.read_text(encoding="utf-8")
+    assert "other = true" in codex_config
+    assert "skillcheck" not in codex_config
+    assert "User instructions." in codex.global_instructions.read_text(encoding="utf-8")
+    assert "SKILLCHECK_START" not in codex.global_instructions.read_text(encoding="utf-8")
+    assert cursor.global_config.exists()
+    assert cursor.global_instructions.exists()
+
+
+def test_reconcile_empty_selection_disconnects_without_smoke_check(tmp_path: Path) -> None:
+    target = _target(AgentId.CODEX, tmp_path)
+    pipeline = InstallPipeline(
+        TargetRegistry([target]),
+        smoke_check=lambda: "smoke passed",
+    )
+    pipeline.apply(pipeline.preview(["codex"], scope="global"), confirmed=True)
+    pipeline.smoke_check = lambda: (_ for _ in ()).throw(RuntimeError("should not run"))
+    preview = pipeline.preview_reconcile(["codex"], [], scope="global")
+
+    result = pipeline.apply_reconcile(preview, confirmed=True)
+
+    assert result.changed_files == [target.global_config, target.global_instructions]
+    assert target.validate_absent("global")
+    assert target.validate_instructions_absent("global")

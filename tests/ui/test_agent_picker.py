@@ -20,6 +20,24 @@ def test_detected_and_configured_agents_are_preselected() -> None:
         configured=["codex"],
     )
     assert [item.value for item in model if item.checked] == ["codex", "claude"]
+
+
+def test_initialized_selection_preselects_only_the_previous_choice() -> None:
+    model = build_picker_model(
+        detections=[detected("codex"), detected("claude"), detected("cursor")],
+        configured=["codex"],
+        selection_initialized=True,
+    )
+    assert [item.value for item in model if item.checked] == ["codex"]
+
+
+def test_initialized_empty_selection_stays_empty() -> None:
+    model = build_picker_model(
+        detections=[detected("codex"), detected("claude")],
+        configured=[],
+        selection_initialized=True,
+    )
+    assert [item.value for item in model if item.checked] == []
     assert model[2].label.endswith("（未检测）")
 
 

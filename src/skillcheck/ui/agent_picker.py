@@ -40,7 +40,10 @@ def _is_available(detection: DetectionResult) -> bool:
 
 
 def build_picker_model(
-    detections: Iterable[DetectionResult], configured: Iterable[str] = ()
+    detections: Iterable[DetectionResult],
+    configured: Iterable[str] = (),
+    *,
+    selection_initialized: bool = False,
 ) -> list[PickerItem]:
     """Build stable checkbox rows without touching files or terminal state."""
     by_agent = {_agent_value(item.agent): item for item in detections}
@@ -57,7 +60,12 @@ def build_picker_model(
             PickerItem(
                 value=value,
                 label=label,
-                checked=available and (value in configured_values or detection is not None),
+                checked=available
+                and (
+                    value in configured_values
+                    if selection_initialized
+                    else detection is not None
+                ),
                 available=available,
             )
         )
@@ -71,9 +79,17 @@ class AgentPicker:
         self.prompt = prompt
 
     def choose(
-        self, detections: Iterable[DetectionResult], configured: Iterable[str] = ()
+        self,
+        detections: Iterable[DetectionResult],
+        configured: Iterable[str] = (),
+        *,
+        selection_initialized: bool = False,
     ) -> PickerResult:
-        model = build_picker_model(detections, configured)
+        model = build_picker_model(
+            detections,
+            configured,
+            selection_initialized=selection_initialized,
+        )
         prompt = self.prompt
         if prompt is None:
             try:

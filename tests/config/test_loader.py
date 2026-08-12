@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from skillcheck.config import load_config
+from skillcheck.config import load_config, save_config
 
 
 def test_missing_config_creates_only_v4_sections(tmp_path) -> None:
@@ -23,6 +23,19 @@ def test_missing_config_creates_only_v4_sections(tmp_path) -> None:
     }
     assert config.catalog.database_path == tmp_path / ".skillcheck" / "index.db"
     assert config.reports.directory == tmp_path / ".skillcheck" / "reports"
+    assert config.targets.selection_initialized is False
+
+
+def test_agent_selection_is_persisted_exactly(tmp_path) -> None:
+    path = tmp_path / "config.yaml"
+    config = load_config(path, home=tmp_path)
+    config.targets.configured = ["codex", "cursor"]
+    config.targets.selection_initialized = True
+    save_config(path, config)
+
+    loaded = load_config(path, home=tmp_path, create=False)
+    assert loaded.targets.configured == ["codex", "cursor"]
+    assert loaded.targets.selection_initialized is True
 
 
 def test_old_config_version_is_rejected_without_rewriting_source(tmp_path) -> None:

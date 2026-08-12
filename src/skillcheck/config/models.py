@@ -55,6 +55,8 @@ class ThresholdConfig(StrictConfig):
 
 class TargetConfig(StrictConfig):
     configured: list[str] = Field(default_factory=list)
+    # Once initialized, the picker reuses this exact list on subsequent runs.
+    selection_initialized: bool = False
     scope: Literal["global", "project"] = "global"
     last_validated: bool = False
 

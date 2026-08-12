@@ -65,18 +65,34 @@ class InstructionManager:
         return InstructionWriteResult(path=self.path, changed=change.changed)
 
     def uninstall(self) -> InstructionWriteResult:
+        return self.apply(self.preview_uninstall())
+
+    def preview_uninstall(self) -> InstructionChange:
+        """Build a hash-bound change that removes only Skillcheck's marker block."""
+
         text = self._read()
         span = self._marker_span(text)
         if span is None:
-            return InstructionWriteResult(path=self.path, changed=False)
-        start, end = span
-        after_text = f"{text[:start]}{text[end:]}"
-        atomic_replace(self.path, after_text, expected_hash=content_hash(self.path))
-        return InstructionWriteResult(path=self.path, changed=True)
+            after_text = text
+        else:
+            start, end = span
+            after_text = f"{text[:start]}{text[end:]}"
+        return InstructionChange(
+            path=self.path,
+            before_hash=content_hash(self.path),
+            after_text=after_text,
+            changed=after_text != text,
+        )
 
     def validate(self) -> bool:
         try:
             return self._marker_span(self._read()) is not None
+        except InstructionFormatError:
+            return False
+
+    def validate_absent(self) -> bool:
+        try:
+            return self._marker_span(self._read()) is None
         except InstructionFormatError:
             return False
 

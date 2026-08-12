@@ -4,6 +4,8 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from skillcheck.app.main import app
+from skillcheck.commands.install import _persist_configured_targets
+from skillcheck.config import load_config
 from skillcheck.pipelines.install_pipeline import InstallPipeline
 from skillcheck.targets.base import AgentId
 from skillcheck.targets.codex import CodexTarget
@@ -85,3 +87,30 @@ def test_cancelled_install_does_not_create_configuration(monkeypatch, tmp_path: 
 
     assert result.exit_code == 0
     assert not config.exists()
+
+
+def test_persisted_agent_selection_is_replaced_not_appended(tmp_path: Path) -> None:
+    config = tmp_path / "state" / "config.yaml"
+    config.parent.mkdir()
+    loaded = load_config(config, home=tmp_path)
+    loaded.targets.configured = ["codex", "claude"]
+    from skillcheck.config import save_config
+
+    save_config(config, loaded)
+
+    _persist_configured_targets(config, ["codex"], "global")
+
+    saved = load_config(config, home=tmp_path, create=False)
+    assert saved.targets.configured == ["codex"]
+    assert saved.targets.selection_initialized is True
+
+
+def test_install_without_target_requires_an_interactive_picker(monkeypatch, tmp_path: Path) -> None:
+    pipeline = _pipeline(tmp_path)
+    config = tmp_path / "state" / "config.yaml"
+    monkeypatch.setattr("skillcheck.commands.install.build_install_pipeline", lambda *_args, **_kwargs: pipeline)
+
+    result = runner.invoke(app, ["install", "--config", str(config)])
+
+    assert result.exit_code == 2
+    assert "interactive terminal required" in result.output

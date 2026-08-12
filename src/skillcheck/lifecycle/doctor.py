@@ -208,15 +208,77 @@ class Doctor:
         except (AttributeError, OSError, RuntimeError):
             return []
 
+    def _configured_selection(self) -> list[str] | None:
+        """Return the persisted selection, or None for legacy test contexts."""
+
+        config = getattr(self.context, "config", None)
+        targets = getattr(config, "targets", None)
+        if targets is None:
+            return None
+        if not getattr(targets, "selection_initialized", False):
+            return []
+        return list(dict.fromkeys(str(item).casefold() for item in getattr(targets, "configured", [])))
+
+    def _selection_not_initialized(self):
+        config = getattr(self.context, "config", None)
+        targets = getattr(config, "targets", None)
+        return targets is not None and not getattr(targets, "selection_initialized", False)
+
     def _targets_detect(self):
+        configured = self._configured_selection()
+        if configured is not None:
+            if self._selection_not_initialized():
+                return self._check(
+                    "targets.detect",
+                    False,
+                    "Agent selection has not been initialized",
+                    "Run skillcheck install and confirm the Agent checkbox selection.",
+                )
+            if not configured:
+                return self._check("targets.detect", True, "No Agent integrations are selected")
+            detected = {item.agent.value: item for item in self._detections()}
+            return self._check(
+                "targets.detect",
+                all(agent in detected for agent in configured),
+                "Configured Agent targets were detected",
+                "Run skillcheck install to review the selected Agent targets.",
+            )
         detected = self._detections()
         return self._check("targets.detect", bool(detected), "Agent targets were detected", "Run skillcheck install --target all to configure supported Agents.")
 
     def _targets_mcp(self):
+        configured = self._configured_selection()
+        if configured is not None:
+            if self._selection_not_initialized():
+                return self._check(
+                    "targets.mcp",
+                    False,
+                    "Agent selection has not been initialized",
+                    "Run skillcheck install and confirm the Agent checkbox selection.",
+                )
+            if not configured:
+                return self._check("targets.mcp", True, "No selected Agent MCP entries to validate")
+            detected = {item.agent.value: item for item in self._detections()}
+            ok = all(agent in detected and detected[agent].mcp_configured for agent in configured)
+            return self._check("targets.mcp", ok, "Selected Agent MCP entries are configured", "Run skillcheck install to reconcile only the selected Agents.")
         detected = self._detections()
         return self._check("targets.mcp", bool(detected) and all(item.mcp_configured for item in detected), "Skillcheck MCP entries are configured", "Run skillcheck install to rewrite only Skillcheck MCP entries.")
 
     def _targets_instructions(self):
+        configured = self._configured_selection()
+        if configured is not None:
+            if self._selection_not_initialized():
+                return self._check(
+                    "targets.instructions",
+                    False,
+                    "Agent selection has not been initialized",
+                    "Run skillcheck install and confirm the Agent checkbox selection.",
+                )
+            if not configured:
+                return self._check("targets.instructions", True, "No selected Agent instruction markers to validate")
+            detected = {item.agent.value: item for item in self._detections()}
+            ok = all(agent in detected and detected[agent].instructions_configured for agent in configured)
+            return self._check("targets.instructions", ok, "Selected Agent instruction markers are configured", "Run skillcheck install to reconcile only the selected Agents.")
         detected = self._detections()
         return self._check("targets.instructions", bool(detected) and all(item.instructions_configured for item in detected), "Skillcheck instruction markers are configured", "Run skillcheck install to rewrite only Skillcheck marker blocks.")
 

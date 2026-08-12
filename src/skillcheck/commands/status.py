@@ -16,6 +16,7 @@ from skillcheck.config import load_config
 
 class SkillcheckStatus(BaseModel):
     configured_agents: list[str] = Field(default_factory=list)
+    selection_initialized: bool = False
     initialized: bool
     root_count: int = 0
     skill_count: int = 0
@@ -32,6 +33,7 @@ def read_status(config_path: Path | str | None = None) -> SkillcheckStatus:
     config = load_config(config_path)
     result = SkillcheckStatus(
         configured_agents=list(config.targets.configured),
+        selection_initialized=config.targets.selection_initialized,
         initialized=config.catalog.initialized,
     )
     if not config.catalog.initialized:
@@ -64,6 +66,7 @@ def render_status(status: SkillcheckStatus) -> str:
     agents = ", ".join(status.configured_agents) if status.configured_agents else "未配置"
     lines = [
         f"已接入 Agent：{agents}",
+        f"Agent 选择：{'已保存' if status.selection_initialized else '待确认'}",
         f"Skills 索引：{'已初始化' if status.initialized else '未初始化'}",
         f"索引目录：{status.root_count}，Skill：{status.skill_count}",
         f"监听模式：{status.watch_mode}",
