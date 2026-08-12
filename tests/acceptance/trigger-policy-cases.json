@@ -1,0 +1,10 @@
+[
+  {"id": "positive-duplicate", "prompt": "检查本机 Skills 有没有重复", "expect": "call"},
+  {"id": "positive-preflight", "prompt": "这个 GitHub Skill 安装前是否与现有能力冲突", "expect": "call"},
+  {"id": "positive-sync", "prompt": "检查 Codex 和 Claude 的同步组是否漂移", "expect": "call"},
+  {"id": "negative-code", "prompt": "写一个 Python 快速排序函数", "expect": "no_call"},
+  {"id": "negative-test", "prompt": "修复这个单元测试", "expect": "no_call"},
+  {"id": "negative-readme", "prompt": "帮我润色 README", "expect": "no_call"},
+  {"id": "negative-use-skill", "prompt": "使用 api-review Skill 检查这个接口", "expect": "no_call"},
+  {"id": "negative-opt-out", "prompt": "不要使用 Skillcheck，直接解释概念", "expect": "no_call"}
+]
