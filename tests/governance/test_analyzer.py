@@ -58,6 +58,26 @@ def test_library_analyze_groups_exact_duplicates_and_persists_run(
     assert result.next_tool == "skillcheck_evidence"
 
 
+def test_library_analyze_classifies_cross_agent_hash_matches_as_mirrors(
+    analyzer: GovernanceAnalyzer, repository: CatalogRepository, tmp_path
+) -> None:
+    repository.upsert_root(
+        LibraryRoot(
+            root_id="root-2", path=tmp_path / "claude-skills", provider="claude", scope=RootScope.PROJECT
+        )
+    )
+    repository.upsert_snapshot(_snapshot("codex-copy", "sha256:mirror"))
+    repository.upsert_snapshot(
+        _snapshot("claude-copy", "sha256:mirror").model_copy(update={"root_id": "root-2"})
+    )
+
+    result = analyzer.analyze_library(scope="all", limit=20)
+
+    assert [(group.relation, group.member_skill_ids) for group in result.groups] == [
+        (Relation.MIRRORED_COPY, ["claude-copy", "codex-copy"])
+    ]
+
+
 def test_library_analyze_sorts_relation_then_similarity_then_group_id(
     analyzer: GovernanceAnalyzer, repository: CatalogRepository
 ) -> None:

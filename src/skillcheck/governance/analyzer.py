@@ -31,16 +31,18 @@ from .models import (
     SourcePreflight,
 )
 from .repository import GovernanceRepository
+from .scopes import ScopeClassifier
 
 _PAGE_SIZE = 20
 _BODY_LIMIT = 12_000
 _RELATION_PRIORITY = {
     Relation.EXACT_DUPLICATE: 0,
-    Relation.CONFLICT_CANDIDATE: 1,
-    Relation.VARIANT_CANDIDATE: 2,
-    Relation.HIGH_OVERLAP_CANDIDATE: 3,
-    Relation.SECURITY_ISSUE: 4,
-    Relation.QUALITY_ISSUE: 5,
+    Relation.MIRRORED_COPY: 1,
+    Relation.CONFLICT_CANDIDATE: 2,
+    Relation.VARIANT_CANDIDATE: 3,
+    Relation.HIGH_OVERLAP_CANDIDATE: 4,
+    Relation.SECURITY_ISSUE: 5,
+    Relation.QUALITY_ISSUE: 6,
 }
 _SENSITIVE_FIELD = re.compile(
     r"(?im)^([^\n:=]*?(?:token|api[_-]?key|secret|password)[^\n:=]*)\s*[:=]\s*.*$"
@@ -174,7 +176,12 @@ class GovernanceAnalyzer:
         findings = {item.skill_id: _snapshot_findings(item) for item in selected}
         vectors = self._vectors_for(selected, lexical_fallback=lexical_fallback)
         audit = LibraryAuditor(top_k=limit).audit(records, vectors, findings=findings)
-        groups = [self._group(group) for group in audit.groups]
+        groups = [
+            self._group(group)
+            for group in audit.groups
+            if group.relation != Relation.EXACT_DUPLICATE.value
+        ]
+        groups.extend(ScopeClassifier(self.catalog.list_roots()).classify(selected))
         groups.sort(key=lambda group: (
             _RELATION_PRIORITY[group.relation],
             -(group.similarity if group.similarity is not None else -1.0),
