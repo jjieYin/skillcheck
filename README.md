@@ -15,6 +15,7 @@ It finds duplicate and overlapping Skills, gives your current Agent bounded evid
 - [How it works](#how-it-works)
 - [Use it from your Agent](#use-it-from-your-agent)
 - [Use it from the CLI](#use-it-from-the-cli)
+- [CLI command reference](#cli-command-reference)
 - [MCP tools](#mcp-tools)
 - [What gets indexed](#what-gets-indexed)
 - [Safety model](#safety-model)
@@ -224,6 +225,83 @@ skillcheck uninstall
 ```
 
 `doctor` is read-only by default. `uninstall` removes Skillcheck's own MCP and instruction markers; it does not remove your user Skills.
+
+## CLI command reference
+
+The following is the complete command surface in v0.5.1. Run
+`skillcheck COMMAND --help` for the exact options available in your build.
+
+### General and setup
+
+| Command | Purpose |
+| --- | --- |
+| `skillcheck` | Show the current status; if no Agent is configured, point to the installation wizard. |
+| `skillcheck --help` | Show the command list and global options. |
+| `skillcheck --install-completion` / `skillcheck --show-completion` | Install or print shell completion instructions. |
+| `skillcheck version` | Print the installed Skillcheck version. |
+| `skillcheck install` | Open the Agent checkbox wizard, remember the previous selection, and reconcile MCP/instruction integration. |
+| `skillcheck install --target codex,claude` | Configure an explicit Agent set without opening the picker. Use `--target all` for all supported targets. |
+| `skillcheck init [PATH...]` | Discover standard roots plus optional paths, recursively index every `SKILL.md`, and create or update the local catalog. |
+
+`install` supports `--location global|project`, `--yes`, and `--config PATH`.
+`init` supports `--yes` and `--config PATH`. In a non-interactive terminal,
+`install` requires an explicit `--target`; it never silently selects every
+detected Agent.
+
+### Scan, synchronization, and reports
+
+| Command | Purpose |
+| --- | --- |
+| `skillcheck scan [PATH]` | Synchronize the catalog, run the complete deterministic local audit, and write Markdown/JSON reports. An optional path limits the sync input. |
+| `skillcheck sync [PATH...]` | Perform an explicit incremental catalog synchronization without running the full governance report. |
+| `skillcheck report latest` | Print the newest Markdown governance report. |
+| `skillcheck report show REPORT_ID` | Print a specific Markdown report by ID. |
+| `skillcheck report show REPORT_ID --json` | Print the JSON form of a specific report. |
+| `skillcheck report open REPORT_ID` | Print the path of a specific Markdown report for opening in another program. |
+| `skillcheck status` | Show configured Agents, catalog state, Skill/root counts, last sync, and warnings. |
+| `skillcheck status --json` | Return the same status as machine-readable JSON. |
+
+Library governance analysis is full-scan by default. Evidence pagination in
+the Agent-facing MCP tools does not reduce the number of Skills analyzed.
+
+### Add and install a Skill
+
+| Command | Purpose |
+| --- | --- |
+| `skillcheck add SOURCE` | Preflight a local directory, ZIP, or GitHub URL against the personal catalog and show deterministic blockers before installation. |
+| `skillcheck add SOURCE --target codex` | Preflight and, after confirmation, install to the selected Agent Skill root. Repeat `--target` for multiple targets. |
+| `skillcheck add SOURCE --yes` | Skip only the final installation confirmation; deterministic security blockers still stop the operation. |
+
+`add` never overwrites an existing Skill directory and does not modify files
+when the user declines confirmation.
+
+### Cross-Agent mirror and sync groups
+
+| Command | Purpose |
+| --- | --- |
+| `skillcheck groups` | List monitor-only sync groups (same as `groups list`). |
+| `skillcheck groups list` | List saved cross-Agent mirror groups and their derived status. |
+| `skillcheck groups show GROUP_ID` | Show one group's authority, members, baseline, and status. |
+| `skillcheck groups create` | Create a monitor-only group from a `MIRRORED_COPY` analysis candidate. Supports `--run-id`, `--candidate`, `--authority`, `--name`, and `--yes`. |
+| `skillcheck groups remove GROUP_ID` | Remove only sync-group metadata; never remove or modify Skill files. |
+
+All group commands support `--config PATH`; list/show also support `--json`.
+
+### Diagnostics, service, upgrade, and removal
+
+| Command | Purpose |
+| --- | --- |
+| `skillcheck doctor` | Run read-only environment, catalog, Agent integration, MCP, watcher, and report-permission diagnostics. |
+| `skillcheck doctor --fix --yes` | Apply only the explicitly supported diagnostic repairs after confirmation. |
+| `skillcheck serve --mcp` | Start the MCP stdio service used by Codex, Claude Code, or Cursor. It does not open a network port. |
+| `skillcheck upgrade` | Install the latest verified Skillcheck release. A version can be supplied explicitly, for example `skillcheck upgrade 0.5.1`. |
+| `skillcheck upgrade --rollback` | Switch back to the previous locally installed release. |
+| `skillcheck uninstall` | Remove Skillcheck-owned Agent integration and local program/data state according to the confirmation plan; user Skill files are not removed. |
+| `skillcheck uninstall --target codex` | Remove only the selected Agent integration and preserve other configured Agents. |
+| `skillcheck uninstall --complete` | Remove the complete Skillcheck installation. Use `--keep-cli` or `--keep-data` to retain one part. |
+
+`upgrade`, `uninstall`, and `doctor` support JSON output where shown by
+`--help`. All commands also expose Typer's built-in `--help` documentation.
 
 ### Start the MCP server manually
 
