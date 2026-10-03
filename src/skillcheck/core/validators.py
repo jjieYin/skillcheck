@@ -15,17 +15,23 @@ class BuiltinValidator:
         skill_file = root / "SKILL.md"
         try:
             text = skill_file.read_text(encoding="utf-8")
+            has_source_frontmatter = True
         except (OSError, UnicodeError):
             text = skill.body
+            has_source_frontmatter = False
         try:
-            metadata, _ = parse_frontmatter(text)
+            metadata, body = parse_frontmatter(text)
         except ValueError:
-            metadata = {}
-        if not metadata.get("name"):
+            metadata, body = {}, skill.body
+        if (has_source_frontmatter and not metadata.get("name")) or (
+            not has_source_frontmatter and not skill.name
+        ):
             findings.append(
                 _finding("FMT001", Severity.MEDIUM, "Skill is missing a name.", "Add a stable name to frontmatter.")
             )
-        if not metadata.get("description"):
+        if (has_source_frontmatter and not metadata.get("description")) or (
+            not has_source_frontmatter and not skill.description
+        ):
             findings.append(
                 _finding(
                     "FMT002",
@@ -34,7 +40,47 @@ class BuiltinValidator:
                     "Describe the task boundary and expected output in frontmatter.",
                 )
             )
-        if len(skill.body.strip()) < 20:
+        if has_source_frontmatter and metadata.get("name"):
+            name = str(metadata["name"]).strip()
+            if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", name) or len(name) > 64:
+                findings.append(
+                    _finding(
+                        "FMT003",
+                        Severity.MEDIUM,
+                        "Skill name must be 1-64 lowercase letters, digits, or hyphens.",
+                        "Use a stable lowercase hyphenated name.",
+                    )
+                )
+            if name != root.name:
+                findings.append(
+                    _finding(
+                        "FMT004",
+                        Severity.MEDIUM,
+                        "Skill name does not match its directory name.",
+                        "Rename the directory or update the frontmatter name.",
+                    )
+                )
+        description = metadata.get("description")
+        if has_source_frontmatter and description is not None and len(str(description)) > 1024:
+            findings.append(
+                _finding(
+                    "FMT005",
+                    Severity.MEDIUM,
+                    "Skill description exceeds 1024 characters.",
+                    "Shorten the description to the task boundary and expected output.",
+                )
+            )
+        allowed_tools = metadata.get("allowed-tools")
+        if has_source_frontmatter and allowed_tools is not None and not _valid_allowed_tools(allowed_tools):
+            findings.append(
+                _finding(
+                    "FMT006",
+                    Severity.MEDIUM,
+                    "allowed-tools must be a string or a list of strings.",
+                    "Use a comma-separated string or a YAML list of tool names.",
+                )
+            )
+        if len(body.strip()) < 20:
             findings.append(
                 _finding(
                     "QLT001",
@@ -43,8 +89,17 @@ class BuiltinValidator:
                     "Add prerequisites, steps, limits, and expected output.",
                 )
             )
+        if len(body.splitlines()) > 500:
+            findings.append(
+                _finding(
+                    "QLT002",
+                    Severity.LOW,
+                    "Skill body exceeds 500 lines.",
+                    "Split long procedures into focused Skills or reference documents.",
+                )
+            )
 
-        all_text = _read_safe_text(root)
+        all_text = _read_safe_text(root) or skill.body
         findings.extend(_security_findings(all_text))
         return findings
 
@@ -121,4 +176,10 @@ def _finding(rule_id: str, severity: Severity, message: str, remediation: str) -
         message=message,
         evidence_path="SKILL.md",
         remediation=remediation,
+    )
+
+
+def _valid_allowed_tools(value: object) -> bool:
+    return isinstance(value, str) or (
+        isinstance(value, list) and all(isinstance(item, str) for item in value)
     )

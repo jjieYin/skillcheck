@@ -24,6 +24,7 @@ def test_missing_config_creates_only_v4_sections(tmp_path) -> None:
     assert config.catalog.database_path == tmp_path / ".skillcheck" / "index.db"
     assert config.reports.directory == tmp_path / ".skillcheck" / "reports"
     assert config.targets.selection_initialized is False
+    assert config.embedding.algorithm_revision == "2"
 
 
 def test_agent_selection_is_persisted_exactly(tmp_path) -> None:

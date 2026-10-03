@@ -7,7 +7,6 @@ import re
 import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Annotated
 
 import typer
 
@@ -110,10 +109,10 @@ def build_doctor_context(config_path: Path | None):
 def register(app: typer.Typer) -> None:
     @app.command("doctor")
     def doctor(
-        fix: Annotated[bool, typer.Option("--fix", help="生成并预览受控修复计划")] = False,
-        yes: Annotated[bool, typer.Option("--yes", help="确认执行修复计划")] = False,
-        config: Annotated[Path | None, typer.Option("--config")] = None,
-        as_json: Annotated[bool, typer.Option("--json")] = False,
+        fix: bool = typer.Option(False, "--fix", help="生成并预览受控修复计划"),
+        yes: bool = typer.Option(False, "--yes", help="确认执行修复计划"),
+        config: Path = typer.Option(None, "--config"),
+        as_json: bool = typer.Option(False, "--json"),
     ) -> None:
         context = build_doctor_context(config)
         service = Doctor(context)

@@ -42,7 +42,7 @@ def test_v5_mirror_and_sync_group_journey(monkeypatch, tmp_path: Path) -> None:
 
     config = load_config(create=False)
     catalog = CatalogRepository(CatalogDatabase(config.catalog.database_path))
-    analysis = GovernanceAnalyzer(catalog).analyze_library(limit=None, trigger_source="explicit_user")
+    analysis = GovernanceAnalyzer(catalog).analyze_library(trigger_source="explicit_user")
     mirror = next(group for group in analysis.groups if group.relation.value == "MIRRORED_COPY")
     authority = next(
         skill.skill_id

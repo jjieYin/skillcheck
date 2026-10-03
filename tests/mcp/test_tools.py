@@ -76,7 +76,7 @@ def mirror_run(tmp_path):
     catalog.upsert_snapshot(_snapshot("codex-api", "codex-root", "sha256:mirror"))
     catalog.upsert_snapshot(_snapshot("claude-api", "claude-root", "sha256:mirror"))
     analyzer = GovernanceAnalyzer(catalog)
-    result = analyzer.analyze_library(limit=20)
+    result = analyzer.analyze_library()
     group = next(group for group in result.groups if group.relation is Relation.MIRRORED_COPY)
     return SimpleNamespace(catalog=catalog, result=result, group=group)
 

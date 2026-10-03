@@ -81,7 +81,7 @@ def render_status(status: SkillcheckStatus) -> str:
 def register(app: typer.Typer) -> None:
     @app.command("status")
     def status(
-        config: Path | None = typer.Option(None, "--config"),
+        config: Path = typer.Option(None, "--config"),
         as_json: bool = typer.Option(False, "--json"),
     ) -> None:
         snapshot = read_status(config)

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
 
 import typer
 
@@ -41,10 +40,10 @@ def _render_prepared(prepared) -> None:
 def register(app: typer.Typer) -> None:
     @app.command("add")
     def add(
-        source: Annotated[str, typer.Argument(help="目录、ZIP 或 GitHub URL")],
-        target: Annotated[list[str] | None, typer.Option("--target", "-t")] = None,
-        yes: Annotated[bool, typer.Option("--yes", help="确认后直接安装")] = False,
-        config: Annotated[Path | None, typer.Option("--config")] = None,
+        source: str = typer.Argument(..., help="目录、ZIP 或 GitHub URL"),
+        target: list[str] = typer.Option(None, "--target", "-t"),
+        yes: bool = typer.Option(False, "--yes", help="确认后直接安装"),
+        config: Path = typer.Option(None, "--config"),
     ) -> None:
         try:
             pipeline = build_add_pipeline(config)

@@ -21,4 +21,6 @@ class SyncPipeline:
         if not self.config.catalog.initialized:
             raise CatalogNotInitialized("请先运行 skillcheck init")
         roots = self.repository.list_roots()
-        return self.reconciler.reconcile(roots, changed_paths=paths)
+        # Typer's legacy list argument yields [] when omitted; treat that as a
+        # full reconciliation rather than an empty incremental change set.
+        return self.reconciler.reconcile(roots, changed_paths=paths or None)

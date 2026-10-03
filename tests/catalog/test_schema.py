@@ -11,6 +11,7 @@ EXPECTED_TABLES = {
     "skill_snapshots",
     "sync_events",
     "vectors",
+    "segment_vectors",
     "analysis_runs",
     "candidate_groups",
     "group_members",
@@ -25,25 +26,26 @@ EXPECTED_TABLES = {
 }
 
 
-def test_initialize_creates_complete_v5_schema(tmp_path) -> None:
+def test_initialize_creates_complete_v7_schema(tmp_path) -> None:
     database = CatalogDatabase(tmp_path / "index.db")
 
     database.initialize()
 
-    assert database.schema_version() == 5
+    assert database.schema_version() == 7
     assert EXPECTED_TABLES <= database.table_names()
+    assert "segment_vectors" in database.table_names()
     with sqlite3.connect(database.path) as connection:
         columns = connection.execute("PRAGMA table_info(skill_fts)").fetchall()
     assert [column[1] for column in columns] == ["snapshot_id", "name", "description", "body"]
 
 
-def test_existing_v5_catalog_can_be_reopened(tmp_path) -> None:
+def test_existing_v6_catalog_can_be_reopened(tmp_path) -> None:
     database = CatalogDatabase(tmp_path / "index.db")
     database.initialize()
 
     database.initialize()
 
-    assert database.schema_version() == 5
+    assert database.schema_version() == 7
 
 
 def test_incompatible_existing_database_is_rejected_without_overwrite(tmp_path) -> None:

@@ -27,7 +27,7 @@ def analyzer(tmp_path: Path) -> GovernanceAnalyzer:
 def test_source_analyze_binds_run_to_source_hash(analyzer: GovernanceAnalyzer, tmp_path: Path) -> None:
     source = write_skill(tmp_path / "source", name="incoming", body="Useful safe implementation details.")
 
-    result = analyzer.analyze_source(str(source), scope="all", limit=20)
+    result = analyzer.analyze_source(str(source), scope="all")
     stored = analyzer.repository.get_source_preflight(result.run_id)
 
     assert stored.run_id == result.run_id
@@ -51,13 +51,49 @@ def test_default_source_analysis_considers_every_incoming_skill(
     assert any(item.rule_id == "SEC002" for item in stored.deterministic_blockers)
 
 
+def test_source_analysis_scope_filters_catalog_but_keeps_staged_source(
+    analyzer: GovernanceAnalyzer, tmp_path: Path
+) -> None:
+    analyzer.catalog.upsert_root(
+        LibraryRoot(root_id="global", path=tmp_path / "global", provider="codex", scope=RootScope.GLOBAL)
+    )
+    analyzer.catalog.upsert_root(
+        LibraryRoot(
+            root_id="project",
+            path=tmp_path / "project",
+            provider="codex",
+            scope=RootScope.PROJECT,
+            project_path=Path.cwd(),
+        )
+    )
+    analyzer.catalog.upsert_snapshot(
+        SkillSnapshot(
+            snapshot_id="global-snapshot", skill_id="global-skill", root_id="global",
+            relative_path="global/SKILL.md", name="global", body="A complete global skill body.",
+            content_hash="sha256:global", indexed_at=datetime.now(UTC),
+        )
+    )
+    analyzer.catalog.upsert_snapshot(
+        SkillSnapshot(
+            snapshot_id="project-snapshot", skill_id="project-skill", root_id="project",
+            relative_path="project/SKILL.md", name="project", body="A complete project skill body.",
+            content_hash="sha256:project", indexed_at=datetime.now(UTC),
+        )
+    )
+    source = write_skill(tmp_path / "source", name="incoming", body="A complete incoming skill body.")
+
+    result = analyzer.analyze_source(source, scope="project")
+
+    assert result.summary.skills_considered == 2
+
+
 def test_source_analyze_cleans_staging_after_failure(analyzer: GovernanceAnalyzer, tmp_path: Path) -> None:
     archive = tmp_path / "unsafe.zip"
     with ZipFile(archive, "w") as zip_file:
         zip_file.writestr("../escape/SKILL.md", "unsafe")
 
     with pytest.raises(SourceSafetyError):
-        analyzer.analyze_source(str(archive), scope="all", limit=20)
+        analyzer.analyze_source(str(archive), scope="all")
 
     assert list(analyzer.staging_root.iterdir()) == []
 
@@ -71,7 +107,7 @@ def test_source_preflight_records_deterministic_security_blockers(
         body="The leaked value is sk-abcdefghijklmnop.",
     )
 
-    result = analyzer.analyze_source(str(source), scope="all", limit=20)
+    result = analyzer.analyze_source(str(source), scope="all")
     stored = analyzer.repository.get_source_preflight(result.run_id)
 
     assert any(item.rule_id.startswith("SEC") for item in stored.deterministic_blockers)
@@ -93,7 +129,7 @@ def test_source_preflight_does_not_block_on_an_existing_library_secret(
     )
     source = write_skill(tmp_path / "safe", name="safe", body="A safe new implementation.")
 
-    result = analyzer.analyze_source(str(source), scope="all", limit=20)
+    result = analyzer.analyze_source(str(source), scope="all")
 
     assert analyzer.repository.get_source_preflight(result.run_id).deterministic_blockers == []
 
@@ -112,7 +148,7 @@ def test_source_preflight_blocks_all_builtin_security_rules(
 ) -> None:
     source = write_skill(tmp_path / rule_id, name=rule_id.lower(), body=body.replace("\\u202e", "\u202e"))
 
-    result = analyzer.analyze_source(str(source), limit=20)
+    result = analyzer.analyze_source(str(source))
     blockers = analyzer.repository.get_source_preflight(result.run_id).deterministic_blockers
 
     assert rule_id in {finding.rule_id for finding in blockers}

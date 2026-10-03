@@ -11,7 +11,9 @@ from skillcheck.models.audit import (
     Finding,
     GovernanceGroup,
     LibraryAuditReport,
+    PairEvidence,
     Relation,
+    SkillFinding,
 )
 from skillcheck.models.common import Decision, Provider, Scope, Severity
 from skillcheck.models.installation import AddOutcome, InstallationPlan, ReleaseManifest
@@ -29,6 +31,7 @@ __all__ = [
     "GovernanceGroup",
     "InstallationPlan",
     "LibraryAuditReport",
+    "PairEvidence",
     "Provider",
     "Relation",
     "ReleaseManifest",
@@ -36,5 +39,6 @@ __all__ = [
     "ScanRun",
     "Scope",
     "Severity",
+    "SkillFinding",
     "SkillRecord",
 ]

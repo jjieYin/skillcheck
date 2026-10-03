@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Annotated
-
 import typer
 
 from skillcheck.lifecycle.release_client import ReleaseClient
@@ -19,10 +17,10 @@ def build_upgrade_context():
 def register(app: typer.Typer) -> None:
     @app.command("upgrade")
     def upgrade(
-        version: Annotated[str | None, typer.Argument()] = None,
-        rollback: Annotated[bool, typer.Option("--rollback")] = False,
-        yes: Annotated[bool, typer.Option("--yes")] = False,
-        as_json: Annotated[bool, typer.Option("--json")] = False,
+        version: str = typer.Argument(None),
+        rollback: bool = typer.Option(False, "--rollback"),
+        yes: bool = typer.Option(False, "--yes"),
+        as_json: bool = typer.Option(False, "--json"),
     ) -> None:
         del yes
         try:

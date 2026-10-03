@@ -61,7 +61,7 @@ def test_evidence_pages_redacts_body_and_preserves_pending_staleness(tmp_path) -
     pending = root / "skill-00" / "SKILL.md"
     runtime = PendingRuntime(pending)
     analyzer = GovernanceAnalyzer(catalog, runtime=runtime)
-    analyzed = analyzer.analyze_library(limit=100)
+    analyzed = analyzer.analyze_library()
     runtime.before_query_calls = 0
 
     first = analyzer.evidence(analyzed.run_id, analyzed.groups[0].group_id, page=1, include_body=True)
@@ -90,7 +90,7 @@ def test_evidence_syncs_runtime_before_reading_members(tmp_path, monkeypatch) ->
     catalog.upsert_snapshot(_snapshot(2))
     runtime = PendingRuntime(root / "none")
     analyzer = GovernanceAnalyzer(catalog, runtime=runtime)
-    analyzed = analyzer.analyze_library(limit=20)
+    analyzed = analyzer.analyze_library()
     runtime.events.clear()
     original = analyzer.repository.evidence_members
 
@@ -124,7 +124,7 @@ def test_evidence_stays_stale_when_real_runtime_consumes_pending_paths(tmp_path)
     config.catalog.initialized = True
     runtime = McpRuntime(config, repository=catalog, project_path=tmp_path)
     analyzer = GovernanceAnalyzer(catalog, runtime=runtime)
-    analyzed = analyzer.analyze_library(limit=20)
+    analyzed = analyzer.analyze_library()
     pending = root / "skill-00" / "SKILL.md"
     runtime._on_changes({pending})
 
@@ -144,10 +144,10 @@ def test_evidence_rejects_a_group_from_another_run(tmp_path) -> None:
     catalog.upsert_snapshot(_snapshot(1))
     catalog.upsert_snapshot(_snapshot(2))
     analyzer = GovernanceAnalyzer(catalog)
-    first = analyzer.analyze_library(limit=20)
+    first = analyzer.analyze_library()
     catalog.upsert_snapshot(_snapshot(3).model_copy(update={"content_hash": "sha256:other"}))
     catalog.upsert_snapshot(_snapshot(4).model_copy(update={"content_hash": "sha256:other"}))
-    second = analyzer.analyze_library(limit=20)
+    second = analyzer.analyze_library()
     first_group_ids = {group.group_id for group in first.groups}
     second_only_group = next(group for group in second.groups if group.group_id not in first_group_ids)
 
@@ -211,7 +211,7 @@ def analyzer(tmp_path) -> GovernanceAnalyzer:
 
 
 def test_analysis_counts_mirrors_separately_from_duplicates(analyzer) -> None:
-    result = analyzer.analyze_library(limit=None)
+    result = analyzer.analyze_library()
 
     assert result.summary.exact_duplicates == 1
     assert result.summary.mirrored_copy_groups == 2
@@ -219,7 +219,7 @@ def test_analysis_counts_mirrors_separately_from_duplicates(analyzer) -> None:
 
 
 def test_mirror_evidence_includes_agent_scope_and_snapshot(analyzer) -> None:
-    result = analyzer.analyze_library(limit=None)
+    result = analyzer.analyze_library()
     mirror = next(group for group in result.groups if group.relation is Relation.MIRRORED_COPY)
     evidence = analyzer.evidence(result.run_id, mirror.group_id, include_body=False)
 
@@ -227,3 +227,38 @@ def test_mirror_evidence_includes_agent_scope_and_snapshot(analyzer) -> None:
     assert evidence.members[0].scope == "global"
     assert evidence.members[0].snapshot_id
     assert evidence.members[0].root_path
+
+
+def test_evidence_includes_persisted_pair_signals(tmp_path) -> None:
+    database = CatalogDatabase(tmp_path / "catalog.db")
+    database.initialize()
+    catalog = CatalogRepository(database)
+    catalog.upsert_root(
+        LibraryRoot(root_id="root-1", path=tmp_path / "skills", provider="codex", scope=RootScope.GLOBAL)
+    )
+    for skill_id in ("skill-a", "skill-b"):
+        catalog.upsert_snapshot(
+            SkillSnapshot(
+                snapshot_id=f"snapshot-{skill_id}",
+                skill_id=skill_id,
+                root_id="root-1",
+                relative_path=f"{skill_id}/SKILL.md",
+                name=skill_id,
+                description="Same API validation purpose.",
+                body="Validate API schemas and report compatible request fields.",
+                content_hash=f"sha256:{skill_id}",
+                indexed_at=datetime(2026, 8, 10, tzinfo=UTC),
+            )
+        )
+    analyzer = GovernanceAnalyzer(catalog)
+    model = analyzer.policy.embedding_signature
+    catalog.save_vector("snapshot-skill-a", model, "sha256:skill-a", [1.0, 0.0])
+    catalog.save_vector("snapshot-skill-b", model, "sha256:skill-b", [0.99, 0.01])
+
+    result = analyzer.analyze_library()
+    group = next(item for item in result.groups if item.relation is Relation.HIGH_OVERLAP_CANDIDATE)
+    evidence = analyzer.evidence(result.run_id, group.group_id)
+
+    assert len(evidence.pair_evidence) == 1
+    assert evidence.pair_evidence[0].source_skill_id == "skill-a"
+    assert evidence.pair_evidence[0].target_skill_id == "skill-b"

@@ -40,7 +40,7 @@ def prepared(tmp_path):
     catalog.upsert_snapshot(_snapshot("skill-a", "sha256:duplicate"))
     catalog.upsert_snapshot(_snapshot("skill-b", "sha256:duplicate"))
     analyzer = GovernanceAnalyzer(catalog)
-    result = analyzer.analyze_library(limit=20)
+    result = analyzer.analyze_library()
     return catalog, result, tmp_path / "reports"
 
 

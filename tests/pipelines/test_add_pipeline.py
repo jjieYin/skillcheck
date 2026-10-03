@@ -41,11 +41,11 @@ def test_add_rejects_preflight_created_for_changed_source(
     source = write_skill(tmp_path / "source", name="new-skill", body="Original safe body.")
     analyze_source = pipeline.governance.analyze_source
 
-    def change_before_preflight(path: str, *, limit: int):
+    def change_before_preflight(path: str):
         (source / "SKILL.md").write_text(
             "---\nname: new-skill\n---\nChanged before preflight.", encoding="utf-8"
         )
-        return analyze_source(path, limit=limit)
+        return analyze_source(path)
 
     monkeypatch.setattr(pipeline.governance, "analyze_source", change_before_preflight)
 

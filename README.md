@@ -128,7 +128,12 @@ User         confirms any installation or file change
 SKILL.md
 ```
 
-The index stores the Skill name, description, body, tools, permissions, environments, inputs, outputs, source path, current status, and immutable content snapshots in a local SQLite database. A full-text index supports local lookup.
+The index stores the Skill name, description, body, official frontmatter fields
+(`license`, `compatibility`, `metadata`, and `allowed-tools`), capability fields,
+source path, current status, and immutable content snapshots in a local SQLite
+database. Each snapshot has a package `content_hash` (SKILL.md plus safe assets)
+and an `instruction_hash` (semantic frontmatter plus normalized instructions).
+A full-text index supports local lookup.
 
 ### Incremental sync
 
@@ -138,18 +143,27 @@ When the MCP server connects, it reconciles file metadata and content hashes bef
 
 Skillcheck uses layered, explainable analysis:
 
-1. **Content hash:** identical canonical content is classified as `EXACT_DUPLICATE`.
-2. **Vector similarity:** names, descriptions, capability fields, and bodies are encoded and compared with cosine similarity.
-3. **Rules:** similarity, permissions, environments, and quality findings produce candidate relations such as `HIGH_OVERLAP_CANDIDATE`, `VARIANT_CANDIDATE`, `CONFLICT_CANDIDATE`, `QUALITY_ISSUE`, and `SECURITY_ISSUE`.
+1. **Layered fingerprints:** package, behavior, and executable-content hashes are kept separate. Identical packages are `EXACT_DUPLICATE`; identical behavior with different assets is a behavior duplicate candidate; different scripts remain an implementation variant candidate.
+2. **Segmented retrieval:** activation, procedure chunks, and constraint clauses are compared independently. Corpus-local IDF and capped term frequency reduce shared boilerplate; procedure coverage stays directional so containment is not collapsed into duplication.
+3. **Rules:** relation-specific gates combine hashes, channel scores, capabilities, permissions, environments, and constraint polarity. `semantic_similarity` is only a real semantic-model signal; offline hash evidence is reported separately as `hashed_lexical_similarity`.
 
-The base installation works offline with a deterministic feature-hash embedding. An optional local sentence-transformer backend can be configured for stronger semantic retrieval.
+The base installation works offline with a deterministic feature-hash vectorizer. An optional local sentence-transformer backend can be configured for candidate retrieval, but it requires an explicit calibrated `threshold_profile` before it can drive automatic high-overlap relations. If the optional model cannot load, Skillcheck keeps the offline lexical path and reports the capability degradation.
+
+Vectorizer signatures include backend, model, revision, dimensions, model kind, section revision, and feature revision. Changing any part isolates the new vectors and triggers reconstruction; vectors from another signature are never mixed into the current analysis.
 
 These steps produce candidates and evidence. They do not decide that a file must be deleted.
 
 Library analysis is complete by default. MCP `skillcheck_analyze` does not take
-a hidden top-N limit; evidence pagination limits only how much evidence is
-returned per page, not how many Skills are analyzed. Direct library APIs may
-still accept an explicit limit for compatibility with scripts.
+a hidden top-N limit; `top_k` is only the neighbor count for each retrieval
+channel. Evidence pagination limits only how much evidence is returned per page,
+not how many Skills are analyzed.
+
+The `scope` value is one of `all`, `global`, `project`, or `custom`. Project scope
+uses the current project path; source analysis always includes the staged source
+and applies scope only to the catalog comparison set. Pair evidence exposes the
+dense, lexical, capability, hash, and permission signals plus min/mean/max
+similarity. Built-in validation always runs; SkillSpector is an optional external
+check enabled only by configuration.
 
 ### Agent review
 

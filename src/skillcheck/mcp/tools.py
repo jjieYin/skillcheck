@@ -8,10 +8,12 @@ from pydantic import TypeAdapter
 
 from skillcheck.governance.analyzer import GovernanceAnalyzer
 from skillcheck.governance.models import AnalyzeMode, Relation, SyncPolicy
+from skillcheck.governance.policy import GovernancePolicy
 from skillcheck.governance.reviews import ReviewService
 from skillcheck.governance.sync_groups import SyncGroupService
 from skillcheck.mcp.runtime import McpRuntime
 from skillcheck.models.governance import GroupDecision
+from skillcheck.vectorization import VectorizationService
 
 
 class SkillcheckMcpTools:
@@ -129,7 +131,24 @@ class SkillcheckMcpTools:
         if self._analyzer is None:
             if self.runtime.repository is None:
                 raise RuntimeError("Skill catalog is not initialized; run 'skillcheck init' first")
-            self._analyzer = GovernanceAnalyzer(self.runtime.repository, runtime=self.runtime)
+            backend = (
+                self.runtime.reconciler.embedding
+                if self.runtime.reconciler is not None
+                else None
+            )
+            self._analyzer = GovernanceAnalyzer(
+                self.runtime.repository,
+                runtime=self.runtime,
+                policy=GovernancePolicy.from_config(
+                    self.runtime.config,
+                    project_path=self.runtime.project_path,
+                ),
+                vectorization=(
+                    VectorizationService(self.runtime.repository, backend)
+                    if backend is not None and hasattr(backend, "descriptor")
+                    else None
+                ),
+            )
         return self._analyzer
 
     def _review_service(self) -> ReviewService:

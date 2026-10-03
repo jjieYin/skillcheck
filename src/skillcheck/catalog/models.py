@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -41,6 +42,14 @@ class SkillSnapshot(BaseModel):
     description: str = ""
     body: str = ""
     content_hash: str
+    instruction_hash: str = ""
+    behavior_hash: str = ""
+    execution_hash: str | None = None
+    hash_algorithm_revision: str = "2"
+    license: str = ""
+    compatibility: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    allowed_tools: list[str] = Field(default_factory=list)
     status: SkillStatus = SkillStatus.ACTIVE
     tools: list[str] = Field(default_factory=list)
     permissions: list[str] = Field(default_factory=list)
@@ -49,6 +58,10 @@ class SkillSnapshot(BaseModel):
     outputs: list[str] = Field(default_factory=list)
     indexed_at: datetime
     parse_error: str | None = None
+
+    @property
+    def package_hash(self) -> str:
+        return self.content_hash
 
 
 class SyncSummary(BaseModel):

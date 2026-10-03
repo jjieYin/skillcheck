@@ -36,7 +36,11 @@ class EmbeddingConfig(StrictConfig):
     backend: str = "hash"
     model_id: str = "hash-v1"
     dimensions: int = 256
+    algorithm_revision: str = "2"
     local_model: str | None = None
+    device: str | None = None
+    batch_size: int = Field(default=32, gt=0)
+    threshold_profile: str | None = None
 
 
 class SecurityConfig(StrictConfig):
@@ -69,6 +73,7 @@ class ReportsConfig(StrictConfig):
 class PrivacyConfig(StrictConfig):
     redact_secrets: bool = True
     include_body_excerpts: bool = True
+    allow_remote_vectorization: bool = False
 
 
 class CatalogConfig(StrictConfig):

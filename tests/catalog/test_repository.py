@@ -8,7 +8,7 @@ import pytest
 
 from skillcheck.catalog.database import CatalogDatabase
 from skillcheck.catalog.models import LibraryRoot, SkillSnapshot, SkillStatus, SyncEvent
-from skillcheck.catalog.repository import CatalogRepository
+from skillcheck.catalog.repository import CatalogRepository, SegmentVectorRecord
 
 
 @pytest.fixture
@@ -81,6 +81,28 @@ def test_upsert_snapshot_keeps_history_and_moves_current_pointer(
     assert repository.list_snapshots("skill-1") == snapshots
 
 
+def test_upsert_snapshot_persists_official_instruction_fields(repository, root) -> None:
+    repository.upsert_root(root)
+    snapshot = SkillSnapshot(
+        snapshot_id="snapshot-official",
+        skill_id="skill-official",
+        root_id="root-1",
+        relative_path="official/SKILL.md",
+        name="official",
+        content_hash="package-hash",
+        instruction_hash="instruction-hash",
+        license="MIT",
+        compatibility="python>=3.11",
+        metadata={"owner": "platform"},
+        allowed_tools=["http-client"],
+        indexed_at=datetime(2026, 8, 10, tzinfo=UTC),
+    )
+
+    repository.upsert_snapshot(snapshot)
+
+    assert repository.get_current_skill("skill-official") == snapshot
+
+
 def test_mark_missing_changes_current_status_without_deleting_history(
     repository, root, snapshots
 ) -> None:
@@ -119,6 +141,62 @@ def test_vectors_are_bound_to_snapshot_and_model(repository, root, snapshots) ->
     assert (rows[0].snapshot_id, rows[0].model) == ("snapshot-1", "local-v1")
     assert (rows[0].content_hash, rows[0].dimensions) == ("hash-1", 2)
     np.testing.assert_array_equal(rows[0].vector, np.array([0.25, 0.75], dtype=np.float32))
+
+
+def test_segment_vectors_replace_all_channels_for_one_signature_atomically(
+    repository, root, snapshots
+) -> None:
+    repository.upsert_root(root)
+    repository.upsert_snapshot(snapshots[0])
+    first_rows = [
+        SegmentVectorRecord(
+            snapshot_id="snapshot-1",
+            model_signature="hash-v2",
+            backend_kind="lexical_hash",
+            channel="activation",
+            chunk_index=0,
+            dimensions=2,
+            text_hash="text-a",
+            vector=np.array([1.0, 0.0], dtype=np.float32),
+            created_at="now",
+        ),
+        SegmentVectorRecord(
+            snapshot_id="snapshot-1",
+            model_signature="hash-v2",
+            backend_kind="lexical_hash",
+            channel="procedure",
+            chunk_index=0,
+            dimensions=2,
+            text_hash="text-p0",
+            vector=np.array([0.0, 1.0], dtype=np.float32),
+            created_at="now",
+        ),
+    ]
+    repository.replace_segment_vectors("snapshot-1", "hash-v2", "lexical_hash", first_rows)
+
+    loaded = repository.get_segment_vectors(["snapshot-1"], "hash-v2")
+
+    assert set(loaded["snapshot-1"]) == {"activation", "procedure"}
+    np.testing.assert_array_equal(loaded["snapshot-1"]["procedure"][0], [0.0, 1.0])
+
+    replacement = [
+        SegmentVectorRecord(
+            snapshot_id="snapshot-1",
+            model_signature="hash-v2",
+            backend_kind="lexical_hash",
+            channel="procedure",
+            chunk_index=0,
+            dimensions=2,
+            text_hash="text-p1",
+            vector=np.array([1.0, 1.0], dtype=np.float32),
+            created_at="later",
+        )
+    ]
+    repository.replace_segment_vectors("snapshot-1", "hash-v2", "lexical_hash", replacement)
+
+    loaded = repository.get_segment_vectors(["snapshot-1"], "hash-v2")
+    assert set(loaded["snapshot-1"]) == {"procedure"}
+    np.testing.assert_array_equal(loaded["snapshot-1"]["procedure"][0], [1.0, 1.0])
 
 
 def test_record_sync_event_is_idempotent_and_preserves_unicode_json(repository, database) -> None:

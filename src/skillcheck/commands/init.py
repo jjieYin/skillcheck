@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
 
 import typer
 
@@ -23,9 +22,9 @@ def build_init_pipeline(config_path: Path | None) -> InitPipeline:
 def register(app: typer.Typer) -> None:
     @app.command("init")
     def init_catalog(
-        paths: Annotated[list[Path] | None, typer.Argument()] = None,
-        yes: Annotated[bool, typer.Option("--yes")] = False,
-        config: Annotated[Path | None, typer.Option("--config")] = None,
+        paths: list[Path] = typer.Argument(None),
+        yes: bool = typer.Option(False, "--yes"),
+        config: Path = typer.Option(None, "--config"),
     ) -> None:
         pipeline = build_init_pipeline(config)
         preview = pipeline.preview(pipeline.discover(paths or []))

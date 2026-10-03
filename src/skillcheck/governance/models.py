@@ -3,9 +3,9 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
-from skillcheck.models.audit import Finding
+from skillcheck.models.audit import Finding, PairEvidence
 
 
 class AnalyzeMode(StrEnum):
@@ -17,9 +17,14 @@ class Relation(StrEnum):
     EXACT_DUPLICATE = "EXACT_DUPLICATE"
     MIRRORED_COPY = "MIRRORED_COPY"
     SYNC_GROUP_DRIFT = "SYNC_GROUP_DRIFT"
+    BEHAVIOR_DUPLICATE_CANDIDATE = "BEHAVIOR_DUPLICATE_CANDIDATE"
+    IMPLEMENTATION_VARIANT_CANDIDATE = "IMPLEMENTATION_VARIANT_CANDIDATE"
     HIGH_OVERLAP_CANDIDATE = "HIGH_OVERLAP_CANDIDATE"
+    CONTAINMENT_CANDIDATE = "CONTAINMENT_CANDIDATE"
+    CONSTRAINT_MISMATCH_CANDIDATE = "CONSTRAINT_MISMATCH_CANDIDATE"
     CONFLICT_CANDIDATE = "CONFLICT_CANDIDATE"
     VARIANT_CANDIDATE = "VARIANT_CANDIDATE"
+    MANUAL_REVIEW = "MANUAL_REVIEW"
     QUALITY_ISSUE = "QUALITY_ISSUE"
     SECURITY_ISSUE = "SECURITY_ISSUE"
 
@@ -29,7 +34,20 @@ class CandidateGroupSummary(BaseModel):
     relation: Relation
     member_skill_ids: list[str]
     similarity: float | None = Field(default=None, ge=0.0, le=1.0)
+    min_similarity: float | None = Field(default=None, ge=0.0, le=1.0)
+    mean_similarity: float | None = Field(default=None, ge=0.0, le=1.0)
+    max_similarity: float | None = Field(default=None, ge=0.0, le=1.0)
     requires_agent_judgment: bool
+
+    @model_validator(mode="after")
+    def set_similarity_statistics(self) -> CandidateGroupSummary:
+        if self.relation in {Relation.EXACT_DUPLICATE, Relation.MIRRORED_COPY}:
+            self.min_similarity = self.mean_similarity = self.max_similarity = self.similarity = 1.0
+        elif self.mean_similarity is None and self.similarity is not None:
+            self.mean_similarity = self.similarity
+        elif self.similarity is None and self.mean_similarity is not None:
+            self.similarity = self.mean_similarity
+        return self
 
 
 class AnalyzeSummary(BaseModel):
@@ -39,6 +57,10 @@ class AnalyzeSummary(BaseModel):
     sync_groups_total: int = 0
     sync_groups_drifted: int = 0
     overlap_candidates: int = 0
+    behavior_duplicate_candidates: int = 0
+    implementation_variant_candidates: int = 0
+    containment_candidates: int = 0
+    constraint_mismatch_candidates: int = 0
     conflict_candidates: int = 0
     variant_candidates: int = 0
     quality_issues: int = 0
@@ -53,7 +75,13 @@ class AnalyzeResult(BaseModel):
     summary: AnalyzeSummary
     groups: list[CandidateGroupSummary]
     deterministic_findings: list[Finding]
+    skill_findings: list[SkillFinding] = Field(default_factory=list)
     next_tool: str | None
+
+
+class SkillFinding(BaseModel):
+    skill_id: str
+    finding: Finding
 
 
 class EvidenceSkill(BaseModel):
@@ -84,6 +112,7 @@ class EvidencePage(BaseModel):
     members: list[EvidenceSkill]
     shared_capabilities: list[str]
     different_capabilities: list[str]
+    pair_evidence: list[PairEvidence] = Field(default_factory=list)
 
 
 class SourcePreflight(BaseModel):

@@ -17,6 +17,7 @@ from skillcheck.catalog.reconcile import CatalogReconciler
 from skillcheck.catalog.repository import CatalogRepository
 from skillcheck.catalog.watcher import CatalogWatcher
 from skillcheck.config.models import AppConfig
+from skillcheck.embeddings import backend_for_config
 
 
 class RuntimeStatus(BaseModel):
@@ -157,7 +158,10 @@ class McpRuntime:
         if self.repository is None:
             self.repository = CatalogRepository(CatalogDatabase(self.config.catalog.database_path))
         if self.reconciler is None:
-            self.reconciler = CatalogReconciler(self.repository)
+            self.reconciler = CatalogReconciler(
+                self.repository,
+                embedding=backend_for_config(self.config.embedding),
+            )
 
     def _register_project_roots(self) -> list[LibraryRoot]:
         assert self.repository is not None

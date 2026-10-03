@@ -7,6 +7,7 @@ from skillcheck.catalog.database import CatalogDatabase
 from skillcheck.catalog.models import RootScope, SyncSummary
 from skillcheck.catalog.repository import CatalogRepository
 from skillcheck.config.models import AppConfig
+from skillcheck.governance.policy import embedding_signature
 from skillcheck.mcp.runtime import McpRuntime
 
 
@@ -69,6 +70,24 @@ def test_runtime_reconciles_before_first_query_and_stops_watcher(tmp_path: Path)
     assert runtime.watcher is not None
     assert runtime.watcher.started is True
     assert runtime.watcher.stopped is True
+
+
+def test_runtime_default_reconciler_uses_configured_embedding(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    database = CatalogDatabase(config.catalog.database_path)
+    database.initialize()
+    runtime = McpRuntime(
+        config,
+        CatalogRepository(database),
+        project_path=tmp_path,
+        watcher_factory=RecordingWatcher,
+    )
+
+    runtime.start()
+
+    assert runtime.reconciler is not None
+    assert runtime.reconciler.embedding is not None
+    assert runtime.reconciler.embedding.model_id == embedding_signature(config.embedding)
 
 
 def test_runtime_registers_new_project_roots_on_connection(tmp_path: Path) -> None:

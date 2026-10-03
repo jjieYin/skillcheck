@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Literal
 
 import typer
 
@@ -91,19 +91,20 @@ def _selected_targets(pipeline: InstallPipeline, requested: str) -> list[str]:
 def register(app: typer.Typer) -> None:
     @app.command("install")
     def install(
-        target: Annotated[
-            str | None,
-            typer.Option("--target", help="Explicit targets, e.g. codex,claude; omit for checkbox picker"),
-        ] = None,
-        location: Annotated[
-            Literal["global", "project"], typer.Option("--location")
-        ] = "global",
-        yes: Annotated[bool, typer.Option("--yes", help="Apply without a confirmation prompt")] = False,
-        print_config: Annotated[
-            str | None,
-            typer.Option("--print-config", metavar="TARGET", help="Print MCP config without writing files"),
-        ] = None,
-        config: Annotated[Path | None, typer.Option("--config")] = None,
+        target: str = typer.Option(
+            None,
+            "--target",
+            help="Explicit targets, e.g. codex,claude; omit for checkbox picker",
+        ),
+        location: str = typer.Option("global", "--location"),
+        yes: bool = typer.Option(False, "--yes", help="Apply without a confirmation prompt"),
+        print_config: str = typer.Option(
+            None,
+            "--print-config",
+            metavar="TARGET",
+            help="Print MCP config without writing files",
+        ),
+        config: Path = typer.Option(None, "--config"),
     ) -> None:
         try:
             # ``create=False`` is intentional: a cancelled picker must not

@@ -53,7 +53,7 @@ class AddPipeline:
         source_hash, files = self._stage_details(source)
         preflight = self.governance.repository.latest_source_preflight(source_hash)
         if preflight is None:
-            result = self.governance.analyze_source(source, limit=20)
+            result = self.governance.analyze_source(source)
             preflight = self.governance.repository.get_source_preflight(result.run_id)
         if preflight.source_hash != source_hash:
             raise ValueError("预检结果与当前来源不一致，请重新执行 add")

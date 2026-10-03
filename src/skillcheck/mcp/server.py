@@ -28,7 +28,8 @@ def create_server(tools: SkillcheckMcpTools) -> FastMCP:
         name="skillcheck_analyze",
         description=(
             "Use only for local Skill governance or incoming Skill preflight; "
-            "not for ordinary software-development tasks."
+            "not for ordinary software-development tasks. scope accepts only "
+            "all, global, project, or custom; source analysis always keeps the staged source."
         ),
     )
     def skillcheck_analyze(

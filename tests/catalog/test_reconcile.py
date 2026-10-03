@@ -5,6 +5,7 @@ from skillcheck.catalog.ids import skill_id
 from skillcheck.catalog.models import LibraryRoot, RootScope, SkillStatus
 from skillcheck.catalog.reconcile import CatalogReconciler
 from skillcheck.catalog.repository import CatalogRepository
+from skillcheck.core.parser import instruction_hash
 
 
 def _write_skill(root: LibraryRoot, name: str = "Example", description: str = "first") -> Path:
@@ -243,6 +244,33 @@ def test_reconcile_embeds_each_new_snapshot_but_not_restoration(tmp_path: Path) 
     assert len(repository.get_vectors("test-v1")) == 2
 
 
+def test_reconcile_backfills_a_missing_current_model_vector(tmp_path: Path) -> None:
+    class Embedding:
+        model_id = "current-model"
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def encode(self, texts: list[str]) -> list[list[float]]:
+            self.calls += 1
+            return [[0.5, 0.5] for _ in texts]
+
+    root = _root(tmp_path)
+    _write_skill(root)
+    repository, _ = _reconciler(tmp_path)
+    embedding = Embedding()
+    reconciler = CatalogReconciler(repository, embedding=embedding)
+    reconciler.reconcile([root])
+
+    with repository.database.connect() as connection:
+        connection.execute("DELETE FROM vectors WHERE model = ?", (embedding.model_id,))
+
+    reconciler.reconcile([root])
+
+    assert embedding.calls == 2
+    assert len(repository.get_vectors(embedding.model_id)) == 1
+
+
 def test_reconcile_skips_parse_and_hash_for_unchanged_fingerprint(tmp_path: Path, monkeypatch) -> None:
     root = _root(tmp_path)
     _write_skill(root)
@@ -263,3 +291,25 @@ def test_reconcile_skips_parse_and_hash_for_unchanged_fingerprint(tmp_path: Path
     reconciler.reconcile([root])
 
     assert calls == 1
+
+
+def test_reconcile_repairs_conservative_instruction_hash_migration_fallback(tmp_path: Path) -> None:
+    root = _root(tmp_path)
+    _write_skill(root)
+    repository, reconciler = _reconciler(tmp_path)
+    reconciler.reconcile([root])
+    current = repository.list_current_skills()[0]
+
+    with repository.database.connect() as connection:
+        connection.execute(
+            "UPDATE skill_snapshots SET instruction_hash = content_hash WHERE snapshot_id = ?",
+            (current.snapshot_id,),
+        )
+
+    summary = reconciler.reconcile([root])
+
+    repaired = repository.list_current_skills()[0]
+    assert summary.updated == 1
+    assert repaired.snapshot_id == current.snapshot_id
+    assert repaired.instruction_hash == instruction_hash(root.path / "example")
+    assert repaired.instruction_hash != repaired.content_hash

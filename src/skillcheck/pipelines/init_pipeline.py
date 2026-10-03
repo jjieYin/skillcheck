@@ -14,7 +14,7 @@ from skillcheck.catalog.reconcile import CatalogReconciler
 from skillcheck.catalog.repository import CatalogRepository
 from skillcheck.config.loader import save_config
 from skillcheck.config.models import AppConfig
-from skillcheck.embeddings import backend_from_config
+from skillcheck.embeddings import backend_for_config
 
 
 class InitPreview(BaseModel):
@@ -78,7 +78,7 @@ class InitPipeline:
         database = CatalogDatabase(self.config.catalog.database_path)
         repository = CatalogRepository(database)
         reconciler = CatalogReconciler(
-            repository, embedding=backend_from_config(self.config.embedding)
+            repository, embedding=backend_for_config(self.config.embedding)
         )
         return reconciler.reconcile(roots)
 

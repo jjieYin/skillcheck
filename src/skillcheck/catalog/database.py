@@ -15,9 +15,9 @@ class IncompatibleCatalogError(RuntimeError):
 
 
 class CatalogDatabase:
-    """Owns creation and compatibility checks for the v5 schema."""
+    """Owns creation and compatibility checks for the v7 schema."""
 
-    schema_version_number = 5
+    schema_version_number = 7
 
     def __init__(self, path: Path | str) -> None:
         self.path = Path(path).expanduser()
@@ -30,7 +30,7 @@ class CatalogDatabase:
         return connection
 
     def initialize(self) -> None:
-        """Create a new catalog, migrate v4, or verify an existing v5 catalog."""
+        """Create a new catalog, migrate v4/v5/v6, or verify an existing v7 catalog."""
         if self.path.exists() and self.path.stat().st_size > 0:
             self._verify_existing_catalog()
             return
@@ -45,27 +45,34 @@ class CatalogDatabase:
                 ).fetchone()
                 if row is None:
                     raise IncompatibleCatalogError(
-                        "Existing catalog is incompatible; reinitialize it for v0.5."
+                        "Existing catalog is incompatible; reinitialize it for v0.6."
                     )
-                if row["value"] == "4":
+                version = row["value"]
+                if version == "4":
                     self._migrate_v4_to_v5(connection)
-                elif row["value"] != str(self.schema_version_number):
+                    version = "5"
+                if version == "5":
+                    self._migrate_v5_to_v6(connection)
+                    version = "6"
+                if version == "6":
+                    self._migrate_v6_to_v7(connection)
+                elif version != str(self.schema_version_number):
                     raise IncompatibleCatalogError(
-                        "Existing catalog is incompatible; reinitialize it for v0.5."
+                        "Existing catalog is incompatible; reinitialize it for v0.6."
                     )
                 if not self._expected_tables() <= self._table_names(connection):
                     raise IncompatibleCatalogError(
-                        "Existing catalog is incomplete; reinitialize it for v0.5."
+                        "Existing catalog is incomplete; reinitialize it for v0.6."
                     )
                 if not self._has_expected_structure(connection):
                     raise IncompatibleCatalogError(
-                        "Existing catalog has an incompatible schema; reinitialize it for v0.5."
+                        "Existing catalog has an incompatible schema; reinitialize it for v0.6."
                     )
         except IncompatibleCatalogError:
             raise
         except sqlite3.DatabaseError as error:
             raise IncompatibleCatalogError(
-                "Existing catalog is invalid; reinitialize it for v0.5."
+                "Existing catalog is invalid; reinitialize it for v0.6."
             ) from error
 
     @staticmethod
@@ -81,7 +88,7 @@ class CatalogDatabase:
                 )
             for statement in statements:
                 connection.execute(statement)
-            if not CatalogDatabase._has_expected_structure(connection):
+            if not CatalogDatabase._has_expected_v5_structure(connection):
                 raise IncompatibleCatalogError(
                     "Catalog migration to v0.5 produced an incompatible schema."
                 )
@@ -89,7 +96,58 @@ class CatalogDatabase:
         except (IncompatibleCatalogError, sqlite3.DatabaseError) as error:
             connection.rollback()
             raise IncompatibleCatalogError(
-                "Catalog migration to v0.5 failed; existing catalog was not changed."
+                "Catalog migration to v0.5 failed; existing catalog was not changed; "
+                "reinitialize the catalog if needed."
+            ) from error
+
+    @staticmethod
+    def _migrate_v5_to_v6(connection: sqlite3.Connection) -> None:
+        statements = [
+            statement.strip() for statement in migrations.V5_TO_V6_SQL.split(";") if statement.strip()
+        ]
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            if not CatalogDatabase._has_expected_v5_structure(connection):
+                raise IncompatibleCatalogError(
+                    "Existing catalog has an incompatible v0.5 schema; reinitialize it."
+                )
+            for statement in statements:
+                connection.execute(statement)
+            if not CatalogDatabase._has_expected_v6_structure(connection):
+                raise IncompatibleCatalogError(
+                    "Catalog migration to v0.6 produced an incompatible schema."
+                )
+            connection.commit()
+        except (IncompatibleCatalogError, sqlite3.DatabaseError) as error:
+            connection.rollback()
+            raise IncompatibleCatalogError(
+                "Catalog migration to v0.6 failed; existing catalog was not changed; "
+                "reinitialize the catalog if needed."
+            ) from error
+
+    @staticmethod
+    def _migrate_v6_to_v7(connection: sqlite3.Connection) -> None:
+        statements = [
+            statement.strip() for statement in migrations.V6_TO_V7_SQL.split(";") if statement.strip()
+        ]
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            if not CatalogDatabase._has_expected_v6_structure(connection):
+                raise IncompatibleCatalogError(
+                    "Existing catalog has an incompatible v0.6 schema; reinitialize it."
+                )
+            for statement in statements:
+                connection.execute(statement)
+            if not CatalogDatabase._has_expected_structure(connection):
+                raise IncompatibleCatalogError(
+                    "Catalog migration to v0.7 produced an incompatible schema."
+                )
+            connection.commit()
+        except (IncompatibleCatalogError, sqlite3.DatabaseError) as error:
+            connection.rollback()
+            raise IncompatibleCatalogError(
+                "Catalog migration to v0.7 failed; existing catalog was not changed; "
+                "reinitialize the catalog if needed."
             ) from error
 
     def _create_schema(self) -> None:
@@ -150,6 +208,22 @@ class CatalogDatabase:
         )
 
     @classmethod
+    def _has_expected_v5_structure(cls, connection: sqlite3.Connection) -> bool:
+        return cls._has_expected_objects(
+            connection,
+            cls._expected_v5_schema_objects(),
+            cls._v5_schema_sql(),
+        )
+
+    @classmethod
+    def _has_expected_v6_structure(cls, connection: sqlite3.Connection) -> bool:
+        return cls._has_expected_objects(
+            connection,
+            cls._expected_v6_schema_objects(),
+            cls._v6_schema_sql(),
+        )
+
+    @classmethod
     def _has_expected_objects(
         cls, connection: sqlite3.Connection, object_names: set[str], schema: str
     ) -> bool:
@@ -183,7 +257,7 @@ class CatalogDatabase:
 
     @classmethod
     def _v4_schema_sql(cls) -> str:
-        schema = cls._schema_sql()
+        schema = cls._v5_schema_sql()
         schema = schema.replace(
             "INSERT INTO schema_meta(key, value) VALUES ('schema_version', '5');",
             "INSERT INTO schema_meta(key, value) VALUES ('schema_version', '4');",
@@ -197,6 +271,45 @@ class CatalogDatabase:
         return schema.replace(
             "CREATE INDEX idx_sync_group_members_skill ON sync_group_members(skill_id);\n",
             "",
+        )
+
+    @classmethod
+    def _v5_schema_sql(cls) -> str:
+        schema = cls._v6_schema_sql()
+        schema = re.sub(
+            r"\n    (instruction_hash|license|compatibility|metadata_json|allowed_tools_json) [^,\n]+,?",
+            "",
+            schema,
+        )
+        schema = schema.replace("    parse_error TEXT,\n);", "    parse_error TEXT\n);")
+        return schema.replace(
+            "INSERT INTO schema_meta(key, value) VALUES ('schema_version', '6');",
+            "INSERT INTO schema_meta(key, value) VALUES ('schema_version', '5');",
+        )
+
+    @classmethod
+    def _v6_schema_sql(cls) -> str:
+        schema = cls._schema_sql()
+        schema = re.sub(
+            r"\n    (behavior_hash|execution_hash|hash_algorithm_revision) [^,\n]+,?",
+            "",
+            schema,
+        )
+        schema = re.sub(
+            r"\nCREATE TABLE segment_vectors \(.*?\n\);\n",
+            "\n",
+            schema,
+            flags=re.DOTALL,
+        )
+        return schema.replace(
+            "CREATE INDEX idx_segment_vectors_model ON segment_vectors(model_signature, channel, snapshot_id);\n",
+            "",
+        ).replace(
+            "    allowed_tools_json TEXT NOT NULL DEFAULT '[]',\n);",
+            "    allowed_tools_json TEXT NOT NULL DEFAULT '[]'\n);",
+        ).replace(
+            "INSERT INTO schema_meta(key, value) VALUES ('schema_version', '7');",
+            "INSERT INTO schema_meta(key, value) VALUES ('schema_version', '6');",
         )
 
     @staticmethod
@@ -224,6 +337,7 @@ class CatalogDatabase:
             "skill_snapshots",
             "sync_events",
             "vectors",
+            "segment_vectors",
             "analysis_runs",
             "candidate_groups",
             "group_members",
@@ -245,7 +359,16 @@ class CatalogDatabase:
             "idx_group_members_snapshot",
             "idx_evidence_group",
             "idx_sync_group_members_skill",
+            "idx_segment_vectors_model",
         }
+
+    @classmethod
+    def _expected_v6_schema_objects(cls) -> set[str]:
+        return cls._expected_schema_objects() - {"segment_vectors", "idx_segment_vectors_model"}
+
+    @classmethod
+    def _expected_v5_schema_objects(cls) -> set[str]:
+        return cls._expected_v6_schema_objects()
 
     @staticmethod
     def _expected_columns() -> dict[str, list[str]]:
@@ -287,6 +410,14 @@ class CatalogDatabase:
                 "outputs_json",
                 "indexed_at",
                 "parse_error",
+                "instruction_hash",
+                "behavior_hash",
+                "execution_hash",
+                "hash_algorithm_revision",
+                "license",
+                "compatibility",
+                "metadata_json",
+                "allowed_tools_json",
             ],
             "sync_events": [
                 "event_id",
@@ -304,6 +435,17 @@ class CatalogDatabase:
                 "model",
                 "dimensions",
                 "content_hash",
+                "vector",
+                "created_at",
+            ],
+            "segment_vectors": [
+                "snapshot_id",
+                "model_signature",
+                "backend_kind",
+                "channel",
+                "chunk_index",
+                "dimensions",
+                "text_hash",
                 "vector",
                 "created_at",
             ],
@@ -360,7 +502,7 @@ class CatalogDatabase:
 
     @classmethod
     def _expected_v4_schema_objects(cls) -> set[str]:
-        return cls._expected_schema_objects() - {
+        return cls._expected_v6_schema_objects() - {
             "sync_groups",
             "sync_group_members",
             "idx_sync_group_members_skill",

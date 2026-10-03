@@ -36,7 +36,7 @@ def test_generated_report_has_five_sections_and_hides_skill_bodies(tmp_path) -> 
                 indexed_at=datetime(2026, 8, 10, tzinfo=UTC),
             )
         )
-    result = GovernanceAnalyzer(catalog).analyze_library(limit=20)
+    result = GovernanceAnalyzer(catalog).analyze_library()
 
     saved = ReviewService(catalog, tmp_path / "reports").save(
         result.run_id,
@@ -95,7 +95,7 @@ def test_generated_report_includes_local_deterministic_findings(tmp_path) -> Non
                 indexed_at=datetime(2026, 8, 10, tzinfo=UTC),
             )
         )
-    result = GovernanceAnalyzer(catalog).analyze_library(limit=20)
+    result = GovernanceAnalyzer(catalog).analyze_library()
     saved = ReviewService(catalog, tmp_path / "reports").save(
         result.run_id,
         [

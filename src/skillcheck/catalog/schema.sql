@@ -3,7 +3,7 @@ CREATE TABLE schema_meta (
     value TEXT NOT NULL
 );
 
-INSERT INTO schema_meta(key, value) VALUES ('schema_version', '5');
+INSERT INTO schema_meta(key, value) VALUES ('schema_version', '7');
 
 CREATE TABLE library_roots (
     root_id TEXT PRIMARY KEY,
@@ -43,7 +43,15 @@ CREATE TABLE skill_snapshots (
     inputs_json TEXT NOT NULL DEFAULT '[]',
     outputs_json TEXT NOT NULL DEFAULT '[]',
     indexed_at TEXT NOT NULL,
-    parse_error TEXT
+    parse_error TEXT,
+    instruction_hash TEXT NOT NULL DEFAULT '',
+    license TEXT NOT NULL DEFAULT '',
+    compatibility TEXT NOT NULL DEFAULT '',
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    allowed_tools_json TEXT NOT NULL DEFAULT '[]',
+    behavior_hash TEXT,
+    execution_hash TEXT,
+    hash_algorithm_revision TEXT
 );
 
 CREATE TABLE sync_events (
@@ -66,6 +74,19 @@ CREATE TABLE vectors (
     vector BLOB NOT NULL,
     created_at TEXT NOT NULL,
     PRIMARY KEY(snapshot_id, model)
+);
+
+CREATE TABLE segment_vectors (
+    snapshot_id TEXT NOT NULL REFERENCES skill_snapshots(snapshot_id) ON DELETE CASCADE,
+    model_signature TEXT NOT NULL,
+    backend_kind TEXT NOT NULL,
+    channel TEXT NOT NULL,
+    chunk_index INTEGER NOT NULL,
+    dimensions INTEGER NOT NULL,
+    text_hash TEXT NOT NULL,
+    vector BLOB NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY(snapshot_id, model_signature, channel, chunk_index)
 );
 
 CREATE TABLE analysis_runs (
@@ -165,6 +186,7 @@ CREATE INDEX idx_snapshots_skill ON skill_snapshots(skill_id, indexed_at DESC);
 CREATE INDEX idx_group_members_snapshot ON group_members(snapshot_id);
 CREATE INDEX idx_evidence_group ON evidence(group_id);
 CREATE INDEX idx_sync_group_members_skill ON sync_group_members(skill_id);
+CREATE INDEX idx_segment_vectors_model ON segment_vectors(model_signature, channel, snapshot_id);
 
 CREATE VIRTUAL TABLE skill_fts USING fts5(
     snapshot_id UNINDEXED,

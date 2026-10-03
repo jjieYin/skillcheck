@@ -40,11 +40,12 @@ class SkillSpectorAdapter:
             )
             payload = json.loads(result.stdout or "[]")
         except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
+            error_kind = type(exc).__name__
             return [
                 Finding(
                     rule_id="CAP002",
                     severity=Severity.MEDIUM,
-                    message=f"SkillSpector scan failed: {exc}",
+                    message=f"SkillSpector scan failed ({error_kind}).",
                     evidence_path="SKILL.md",
                     remediation="Review the scanner installation and rerun the scan.",
                 )

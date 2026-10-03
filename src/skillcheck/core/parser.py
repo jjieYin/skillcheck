@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import hashlib
+import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 import yaml
 
+from skillcheck.core.fingerprints import FingerprintBuilder
 from skillcheck.models import Provider, Scope, SkillRecord
 
 
@@ -43,33 +46,42 @@ def parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
 def canonical_skill_bytes(root: Path) -> bytes:
     """Return deterministic bytes for all safe regular files beneath ``root``."""
 
-    root = Path(root)
-    if not root.is_dir():
-        raise SkillParseError(f"Skill root is not a directory: {root}")
-    root_resolved = root.resolve()
-    digest = hashlib.sha256()
-    files: list[Path] = []
-    for path in root.rglob("*"):
-        if ".git" in path.parts or path.is_symlink() or not path.is_file():
-            continue
-        try:
-            resolved = path.resolve()
-            resolved.relative_to(root_resolved)
-        except (OSError, ValueError):
-            continue
-        files.append(path)
+    from skillcheck.core.fingerprints import _canonical_files_bytes
 
-    for path in sorted(files, key=lambda item: item.relative_to(root).as_posix()):
-        relative = path.relative_to(root).as_posix()
-        digest.update(relative.encode("utf-8"))
-        digest.update(b"\0")
-        digest.update(path.read_bytes())
-        digest.update(b"\0")
-    return digest.digest()
+    try:
+        return _canonical_files_bytes(Path(root))
+    except (OSError, ValueError) as exc:
+        raise SkillParseError(f"cannot fingerprint Skill root: {root}") from exc
 
 
 def content_hash(root: Path) -> str:
     return f"sha256:{hashlib.sha256(canonical_skill_bytes(root)).hexdigest()}"
+
+
+def instruction_hash(root: Path) -> str:
+    """Hash the parsed SKILL.md instructions, independent of package assets.
+
+    Frontmatter is serialized as semantic JSON with sorted keys, while the
+    Markdown body uses LF line endings, no trailing line whitespace, and one
+    final newline.  This keeps the identity stable across formatting-only
+    rewrites without hiding meaningful instruction changes.
+    """
+
+    root = Path(root).expanduser()
+    skill_file = root / "SKILL.md"
+    if not skill_file.is_file():
+        raise SkillParseError(f"SKILL.md not found in Skill root: {root}")
+    try:
+        text = skill_file.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise SkillParseError(f"cannot read SKILL.md: {root}") from exc
+    metadata, body = parse_frontmatter(text)
+    normalized_metadata = json.dumps(
+        _canonical_metadata(metadata), ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+    normalized_body = _normalize_instruction_body(body)
+    payload = f"{normalized_metadata}\n---\n{normalized_body}".encode()
+    return f"sha256:{hashlib.sha256(payload).hexdigest()}"
 
 
 def parse_skill(
@@ -90,7 +102,7 @@ def parse_skill(
     metadata, body = parse_frontmatter(text)
     name = _text_value(metadata.get("name")) or root.name
     description = _text_value(metadata.get("description"))
-    digest = content_hash(root)
+    fingerprints = FingerprintBuilder().build(root, metadata=metadata, body=body)
     skill_id = _text_value(metadata.get("id")) or _path_skill_id(name, root)
     return SkillRecord(
         skill_id=skill_id,
@@ -100,7 +112,15 @@ def parse_skill(
         provider=provider,
         scope=scope,
         body=body.strip(),
-        content_hash=digest,
+        content_hash=fingerprints.package_hash,
+        instruction_hash=instruction_hash(root),
+        behavior_hash=fingerprints.behavior_hash,
+        execution_hash=fingerprints.execution_hash,
+        hash_algorithm_revision=fingerprints.hash_algorithm_revision,
+        license=_text_value(metadata.get("license")),
+        compatibility=_text_value(metadata.get("compatibility")),
+        metadata=_mapping_value(metadata.get("metadata")),
+        allowed_tools=_list_value(metadata.get("allowed-tools")),
         tools=_list_value(metadata.get("tools")),
         permissions=_list_value(metadata.get("permissions")),
         environments=_list_value(metadata.get("environments")),
@@ -130,3 +150,27 @@ def _list_value(value: Any) -> list[str]:
     if isinstance(value, (list, tuple, set)):
         return [str(item).strip() for item in value if str(item).strip()]
     return [str(value).strip()]
+
+
+def _mapping_value(value: Any) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return {}
+    return {str(key): item for key, item in value.items()}
+
+
+def _canonical_metadata(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(key): _canonical_metadata(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_canonical_metadata(item) for item in value]
+    if isinstance(value, set):
+        return sorted(_canonical_metadata(item) for item in value)
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def _normalize_instruction_body(body: str) -> str:
+    normalized = body.replace("\r\n", "\n").replace("\r", "\n")
+    normalized = "\n".join(line.rstrip() for line in normalized.split("\n"))
+    return normalized.rstrip("\n") + "\n"

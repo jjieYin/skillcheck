@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
 
 import typer
 
@@ -12,10 +11,10 @@ from skillcheck.reports import ReportWriter
 def register(app: typer.Typer) -> None:
     @app.command("report")
     def report(
-        action: Annotated[str, typer.Argument(help="latest、show 或 open")],
-        report_id: Annotated[str | None, typer.Argument()] = None,
-        config: Annotated[Path | None, typer.Option("--config")] = None,
-        as_json: Annotated[bool, typer.Option("--json")] = False,
+        action: str = typer.Argument(..., help="latest、show 或 open"),
+        report_id: str = typer.Argument(None),
+        config: Path = typer.Option(None, "--config"),
+        as_json: bool = typer.Option(False, "--json"),
     ) -> None:
         loaded = load_config(config)
         writer = ReportWriter(loaded.reports.directory)

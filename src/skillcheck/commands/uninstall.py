@@ -7,7 +7,6 @@ import shutil
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Annotated
 
 import typer
 
@@ -163,16 +162,17 @@ def _powershell_literal(path: Path) -> str:
 def register(app: typer.Typer) -> None:
     @app.command("uninstall")
     def uninstall(
-        target: Annotated[
-            str | None,
-            typer.Option("--target", help="Remove only the selected Agent integration(s)"),
-        ] = None,
-        yes: Annotated[bool, typer.Option("--yes")] = False,
-        keep_cli: Annotated[bool, typer.Option("--keep-cli")] = False,
-        keep_data: Annotated[bool, typer.Option("--keep-data")] = False,
-        complete: Annotated[bool, typer.Option("--complete")] = False,
-        as_json: Annotated[bool, typer.Option("--json")] = False,
-        config: Annotated[Path | None, typer.Option("--config")] = None,
+        target: str = typer.Option(
+            None,
+            "--target",
+            help="Remove only the selected Agent integration(s)",
+        ),
+        yes: bool = typer.Option(False, "--yes"),
+        keep_cli: bool = typer.Option(False, "--keep-cli"),
+        keep_data: bool = typer.Option(False, "--keep-data"),
+        complete: bool = typer.Option(False, "--complete"),
+        as_json: bool = typer.Option(False, "--json"),
+        config: Path = typer.Option(None, "--config"),
     ) -> None:
         try:
             if target is not None and complete:

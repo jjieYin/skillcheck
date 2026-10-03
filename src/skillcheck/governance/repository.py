@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -11,24 +11,29 @@ from skillcheck.catalog.models import SkillSnapshot
 from skillcheck.catalog.repository import CatalogRepository
 from skillcheck.governance.models import (
     CandidateGroupSummary,
+    SkillFinding,
     SourcePreflight,
     SyncGroup,
     SyncGroupMember,
     SyncGroupStatus,
 )
-from skillcheck.models.audit import Finding
+from skillcheck.models.audit import Finding, PairEvidence
 
 if TYPE_CHECKING:
     from skillcheck.models.governance import GroupDecision
 
 
-@dataclass(frozen=True)
+@dataclass
 class ReviewGroup:
     group_id: str
     relation: str
     similarity: float | None
     member_skill_ids: list[str]
     snapshot_ids: list[str]
+    min_similarity: float | None = None
+    mean_similarity: float | None = None
+    max_similarity: float | None = None
+    pair_evidence: list[dict[str, object]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -37,6 +42,7 @@ class ReviewContext:
     revision: str
     groups: list[ReviewGroup]
     local_findings: list[dict[str, object]]
+    skill_findings: list[dict[str, object]]
     is_current: bool
 
 
@@ -52,7 +58,7 @@ class EvidenceMember:
 
 
 class GovernanceRepository:
-    """Persist bounded local analysis results in the catalog's v5 tables."""
+    """Persist bounded local analysis results in the catalog's v6 tables."""
 
     def __init__(self, catalog: CatalogRepository) -> None:
         self.catalog = catalog
@@ -285,6 +291,10 @@ class GovernanceRepository:
         groups: list[CandidateGroupSummary],
         snapshots_by_skill: dict[str, SkillSnapshot],
         findings: list[Finding] | None = None,
+        skill_findings: list[SkillFinding] | None = None,
+        pair_evidence: dict[str, list[PairEvidence]] | None = None,
+        policy_parameters: dict[str, object] | None = None,
+        scope: str | None = None,
         trigger_source: str = "agent_intent",
     ) -> None:
         now = datetime.now(UTC).isoformat()
@@ -305,8 +315,13 @@ class GovernanceRepository:
                         now,
                         json.dumps(
                             {
+                                **(policy_parameters or {}),
+                                **({"scope": scope} if scope is not None else {}),
                                 "local_findings": [
                                     item.model_dump(mode="json") for item in (findings or [])
+                                ],
+                                "skill_findings": [
+                                    item.model_dump(mode="json") for item in (skill_findings or [])
                                 ],
                                 "trigger_source": trigger_source,
                             },
@@ -327,6 +342,19 @@ class GovernanceRepository:
                         connection.execute(
                             "INSERT INTO group_members(group_id, snapshot_id, role) VALUES (?, ?, 'member')",
                             (stored_group_id, snapshots_by_skill[skill_id].snapshot_id),
+                        )
+                    for index, evidence in enumerate((pair_evidence or {}).get(group.group_id, [])):
+                        connection.execute(
+                            """
+                            INSERT INTO evidence(evidence_id, group_id, kind, content_json, created_at)
+                            VALUES (?, ?, 'pair_signals', ?, ?)
+                            """,
+                            (
+                                f"{stored_group_id}:pair:{index}",
+                                stored_group_id,
+                                json.dumps(evidence.model_dump(mode="json"), ensure_ascii=False),
+                                now,
+                            ),
                         )
                 connection.commit()
             except Exception:
@@ -436,6 +464,21 @@ class GovernanceRepository:
             )
             for row in rows
         ]
+
+    def evidence_pair_evidence(self, run_id: str, group_id: str) -> list[PairEvidence]:
+        stored_group_id = _stored_group_id(run_id, group_id)
+        with self.catalog.database.connect() as connection:
+            group = connection.execute(
+                "SELECT 1 FROM candidate_groups WHERE group_id = ? AND run_id = ?",
+                (stored_group_id, run_id),
+            ).fetchone()
+            if group is None:
+                raise ValueError("group does not belong to analysis run")
+            rows = connection.execute(
+                "SELECT content_json FROM evidence WHERE group_id = ? AND kind = 'pair_signals' ORDER BY evidence_id",
+                (stored_group_id,),
+            ).fetchall()
+        return [PairEvidence.model_validate_json(row["content_json"]) for row in rows]
 
     def review_context(self, run_id: str) -> ReviewContext:
         """Return only the metadata needed to validate and render an Agent review."""
@@ -552,6 +595,35 @@ class GovernanceRepository:
             group.snapshot_ids.append(row["snapshot_id"])
             if row["current_snapshot_id"] != row["snapshot_id"]:
                 current = False
+        evidence_rows = connection.execute(
+            "SELECT group_id, content_json FROM evidence "
+            "WHERE kind = 'pair_signals' AND group_id LIKE ? ORDER BY evidence_id",
+            (f"{run_id}:%",),
+        ).fetchall()
+        for row in evidence_rows:
+            group_id = _public_group_id(run_id, row["group_id"])
+            group = grouped.get(group_id)
+            if group is None:
+                continue
+            evidence = json.loads(row["content_json"])
+            group.pair_evidence.append(evidence)
+        for group in grouped.values():
+            values = [
+                float(
+                    item.get("relation_score")
+                    if item.get("relation_score") is not None
+                    else item.get("signals", {}).get("semantic_similarity")
+                    if item.get("signals", {}).get("semantic_similarity") is not None
+                    else item.get("signals", {}).get("hashed_lexical_similarity")
+                    or item.get("signals", {}).get("activation_lexical_similarity")
+                    or 0.0
+                )
+                for item in group.pair_evidence
+            ]
+            if values:
+                group.min_similarity = min(values)
+                group.mean_similarity = sum(values) / len(values)
+                group.max_similarity = max(values)
         latest = connection.execute(
             "SELECT revision FROM sync_events ORDER BY completed_at DESC, event_id DESC LIMIT 1"
         ).fetchone()
@@ -562,6 +634,7 @@ class GovernanceRepository:
             revision=run["revision"],
             groups=list(grouped.values()),
             local_findings=parameters.get("local_findings", []),
+            skill_findings=parameters.get("skill_findings", []),
             is_current=current,
         )
 
@@ -576,6 +649,11 @@ class GovernanceRepository:
             description=row["description"],
             body=row["body"],
             content_hash=row["content_hash"],
+            instruction_hash=row["instruction_hash"],
+            license=row["license"],
+            compatibility=row["compatibility"],
+            metadata=json.loads(row["metadata_json"] or "{}"),
+            allowed_tools=json.loads(row["allowed_tools_json"] or "[]"),
             status=row["status"],
             tools=json.loads(row["tools_json"]),
             permissions=json.loads(row["permissions_json"]),

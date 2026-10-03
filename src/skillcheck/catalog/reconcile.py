@@ -21,8 +21,13 @@ from skillcheck.catalog.models import (
     SyncSummary,
 )
 from skillcheck.catalog.repository import CatalogRepository
+from skillcheck.core.features import activation_text, procedure_text
 from skillcheck.core.parser import SkillParseError, parse_skill
+from skillcheck.core.sections import extract_skill_sections
+from skillcheck.embeddings import EmbeddingUnavailable
 from skillcheck.models.common import Provider, Scope
+from skillcheck.models.skill import SkillRecord
+from skillcheck.vectorization import VectorizationService
 
 
 class CatalogReconciler:
@@ -31,7 +36,13 @@ class CatalogReconciler:
     def __init__(self, repository: CatalogRepository, *, embedding=None) -> None:
         self.repository = repository
         self.embedding = embedding
+        self.vectorization = (
+            VectorizationService(repository, embedding)
+            if embedding is not None and hasattr(embedding, "descriptor")
+            else None
+        )
         self._fingerprints: dict[Path, tuple[tuple[tuple[str, int, int], ...], str]] = {}
+        self._vectorization_warnings: list[str] = []
 
     def reconcile(
         self, roots: list[LibraryRoot], changed_paths: list[Path] | None = None
@@ -40,6 +51,11 @@ class CatalogReconciler:
         enabled_roots = sorted((root for root in roots if root.enabled), key=lambda root: root.root_id)
         observations: dict[str, dict[str, SkillSnapshot]] = {}
         warnings: list[str] = []
+        self._vectorization_warnings = []
+        if self.vectorization is not None and getattr(self.embedding, "degraded_reason", None):
+            self._vectorization_warnings.append(
+                f"vectorizer_degraded: {self.embedding.degraded_reason}"
+            )
         invalid = 0
         for root in enabled_roots:
             root_observations, root_warnings = self._observe(
@@ -60,6 +76,7 @@ class CatalogReconciler:
                 for root in enabled_roots:
                     self._upsert_root(connection, root)
                 added, updated, removed = self._apply(connection, enabled_roots, observations, changed_paths)
+                warnings.extend(self._vectorization_warnings)
                 event = SyncEvent(
                     event_id=f"event-{uuid4().hex}",
                     revision=revision,
@@ -116,11 +133,14 @@ class CatalogReconciler:
                 relative_path = path.relative_to(root.path).as_posix()
                 identity = skill_id(root.provider, root.scope.value, relative_path)
                 known = current.get(relative_path)
+                current_vector_ready = self._current_vector_ready(known)
                 if (
                     known is not None
                     and known["status"] == SkillStatus.ACTIVE.value
                     and self._fingerprints.get(path)
                     == (fingerprint, known["snapshot_id"])
+                    and known.get("instruction_hash") != known.get("content_hash")
+                    and current_vector_ready
                 ):
                     snapshots[relative_path] = None
                     continue
@@ -137,6 +157,14 @@ class CatalogReconciler:
                         description=parsed.description,
                         body=parsed.body,
                         content_hash=parsed.content_hash,
+                        instruction_hash=parsed.instruction_hash,
+                        behavior_hash=parsed.behavior_hash,
+                        execution_hash=parsed.execution_hash,
+                        hash_algorithm_revision=parsed.hash_algorithm_revision,
+                        license=parsed.license,
+                        compatibility=parsed.compatibility,
+                        metadata=parsed.metadata,
+                        allowed_tools=parsed.allowed_tools,
                         tools=parsed.tools,
                         permissions=parsed.permissions,
                         environments=parsed.environments,
@@ -155,6 +183,7 @@ class CatalogReconciler:
                         relative_path=relative_path,
                         name=path.parent.name,
                         content_hash=content_hash,
+                        instruction_hash=content_hash,
                         status=SkillStatus.INVALID,
                         indexed_at=datetime.now(UTC),
                         parse_error=str(error),
@@ -185,14 +214,24 @@ class CatalogReconciler:
     def _current_state(self, root: LibraryRoot) -> dict[str, dict[str, str]]:
         with self.repository.database.connect() as connection:
             rows = connection.execute(
-                """SELECT relative_path, status, current_snapshot_id
-                   FROM skills WHERE root_id = ?""",
+                """SELECT skills.relative_path, skills.status, skills.current_snapshot_id,
+                          skill_snapshots.content_hash, skill_snapshots.instruction_hash,
+                          skill_snapshots.behavior_hash, skill_snapshots.execution_hash,
+                          skill_snapshots.hash_algorithm_revision
+                   FROM skills
+                   LEFT JOIN skill_snapshots ON skill_snapshots.snapshot_id = skills.current_snapshot_id
+                   WHERE skills.root_id = ?""",
                 (root.root_id,),
             ).fetchall()
         return {
             row["relative_path"]: {
                 "status": row["status"],
                 "snapshot_id": row["current_snapshot_id"],
+                "content_hash": row["content_hash"],
+                "instruction_hash": row["instruction_hash"],
+                "behavior_hash": row["behavior_hash"],
+                "execution_hash": row["execution_hash"],
+                "hash_algorithm_revision": row["hash_algorithm_revision"],
             }
             for row in rows
         }
@@ -239,7 +278,10 @@ class CatalogReconciler:
         for root in roots:
             current = connection.execute(
                 """SELECT skills.skill_id, skills.relative_path, skills.status, skills.current_snapshot_id AS snapshot_id,
-                          skill_snapshots.content_hash, skill_snapshots.status AS snapshot_status
+                          skill_snapshots.content_hash, skill_snapshots.instruction_hash,
+                          skill_snapshots.behavior_hash, skill_snapshots.execution_hash,
+                          skill_snapshots.hash_algorithm_revision,
+                          skill_snapshots.status AS snapshot_status
                    FROM skills JOIN skill_snapshots ON skills.current_snapshot_id = skill_snapshots.snapshot_id
                    WHERE skills.root_id = ?""",
                 (root.root_id,),
@@ -250,9 +292,34 @@ class CatalogReconciler:
                 if item is None:
                     continue
                 before = previous.get(relative_path)
-                if before is not None and before["content_hash"] == item.content_hash and before[
+                same_content = before is not None and before["content_hash"] == item.content_hash and before[
                     "snapshot_status"
-                ] == item.status.value and before["status"] == item.status.value:
+                ] == item.status.value and before["status"] == item.status.value and before[
+                    "instruction_hash"
+                ] == item.instruction_hash and before["behavior_hash"] == item.behavior_hash and before[
+                    "execution_hash"
+                ] == item.execution_hash
+                if same_content:
+                    if item.status is SkillStatus.ACTIVE and self.embedding is not None:
+                        if self.vectorization is not None:
+                            if not self.repository.has_segment_vectors(
+                                item.snapshot_id,
+                                self.vectorization.model_signature,
+                                dimensions=self.vectorization.descriptor.dimensions,
+                                backend_kind=self.vectorization.descriptor.kind,
+                            ):
+                                self._try_encode_segments(connection, item)
+                        else:
+                            vector_row = connection.execute(
+                                "SELECT 1 FROM vectors WHERE snapshot_id = ? AND model = ?",
+                                (item.snapshot_id, self.embedding.model_id),
+                            ).fetchone()
+                            if vector_row is None:
+                                try:
+                                    vector = self.embedding.encode([self._embedding_text(item)])[0]
+                                    self._save_vector(connection, item, vector)
+                                except (EmbeddingUnavailable, ValueError) as error:
+                                    self._mark_vectorization_degraded(error)
                     continue
                 if before is None:
                     added += 1
@@ -264,8 +331,14 @@ class CatalogReconciler:
                     and self.embedding is not None
                     and (before is None or before["snapshot_id"] != item.snapshot_id)
                 ):
-                    vector = self.embedding.encode([self._embedding_text(item)])[0]
-                    self._save_vector(connection, item, vector)
+                    if self.vectorization is not None:
+                        self._try_encode_segments(connection, item)
+                    else:
+                        try:
+                            vector = self.embedding.encode([self._embedding_text(item)])[0]
+                            self._save_vector(connection, item, vector)
+                        except (EmbeddingUnavailable, ValueError) as error:
+                            self._mark_vectorization_degraded(error)
             candidates = previous if changed_paths is None else {
                 path: row for path, row in previous.items() if self._is_changed(root, path, changed_paths)
             }
@@ -333,15 +406,33 @@ class CatalogReconciler:
             (item.skill_id, item.root_id, item.relative_path, item.status.value, item.snapshot_id, now, now),
         )
         connection.execute(
-            """INSERT OR IGNORE INTO skill_snapshots (snapshot_id, skill_id, root_id, relative_path, name,
+            """INSERT INTO skill_snapshots (snapshot_id, skill_id, root_id, relative_path, name,
                description, body, content_hash, status, tools_json, permissions_json, environments_json,
-               inputs_json, outputs_json, indexed_at, parse_error)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               inputs_json, outputs_json, indexed_at, parse_error, instruction_hash,
+               behavior_hash, execution_hash, hash_algorithm_revision, license,
+               compatibility, metadata_json, allowed_tools_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(snapshot_id) DO UPDATE SET
+                   skill_id=excluded.skill_id, root_id=excluded.root_id,
+                   relative_path=excluded.relative_path, name=excluded.name,
+                   description=excluded.description, body=excluded.body,
+                   content_hash=excluded.content_hash, status=excluded.status,
+                   tools_json=excluded.tools_json, permissions_json=excluded.permissions_json,
+                   environments_json=excluded.environments_json, inputs_json=excluded.inputs_json,
+                   outputs_json=excluded.outputs_json, indexed_at=excluded.indexed_at,
+                   parse_error=excluded.parse_error, instruction_hash=excluded.instruction_hash,
+                   behavior_hash=excluded.behavior_hash, execution_hash=excluded.execution_hash,
+                   hash_algorithm_revision=excluded.hash_algorithm_revision,
+                   license=excluded.license, compatibility=excluded.compatibility,
+                   metadata_json=excluded.metadata_json, allowed_tools_json=excluded.allowed_tools_json""",
             (item.snapshot_id, item.skill_id, item.root_id, item.relative_path, item.name, item.description,
              item.body, item.content_hash, item.status.value, json.dumps(item.tools, ensure_ascii=False),
              json.dumps(item.permissions, ensure_ascii=False), json.dumps(item.environments, ensure_ascii=False),
              json.dumps(item.inputs, ensure_ascii=False), json.dumps(item.outputs, ensure_ascii=False),
-             item.indexed_at.isoformat(), item.parse_error),
+             item.indexed_at.isoformat(), item.parse_error, item.instruction_hash,
+             item.behavior_hash, item.execution_hash, item.hash_algorithm_revision, item.license,
+             item.compatibility, json.dumps(item.metadata, ensure_ascii=False),
+             json.dumps(item.allowed_tools, ensure_ascii=False)),
         )
         connection.execute(
             "DELETE FROM skill_fts WHERE snapshot_id IN (SELECT snapshot_id FROM skill_snapshots WHERE skill_id = ?)",
@@ -353,13 +444,113 @@ class CatalogReconciler:
 
     @staticmethod
     def _embedding_text(item: SkillSnapshot) -> str:
-        return "\n".join(part for part in (item.name, item.description, item.body) if part)
+        record = CatalogReconciler._record(item)
+        return "\n".join(
+            part for part in (activation_text(record), procedure_text(record)) if part
+        )
+
+    @staticmethod
+    def _record(item: SkillSnapshot) -> SkillRecord:
+        return SkillRecord(
+            skill_id=item.skill_id,
+            name=item.name,
+            description=item.description,
+            root_path=Path(item.relative_path).parent,
+            body=item.body,
+            content_hash=item.content_hash,
+            instruction_hash=item.instruction_hash,
+            license=item.license,
+            compatibility=item.compatibility,
+            metadata=item.metadata,
+            allowed_tools=item.allowed_tools,
+            tools=item.tools,
+            permissions=item.permissions,
+            environments=item.environments,
+            inputs=item.inputs,
+            outputs=item.outputs,
+        )
+
+    def _current_vector_ready(self, known: dict[str, str] | None) -> bool:
+        if known is None or self.embedding is None:
+            return self.embedding is None
+        if self.vectorization is not None:
+            return self.repository.has_segment_vectors(
+                known["snapshot_id"],
+                self.vectorization.model_signature,
+                dimensions=self.vectorization.descriptor.dimensions,
+                backend_kind=self.vectorization.descriptor.kind,
+            )
+        return self.repository.has_vector(known["snapshot_id"], self.embedding.model_id)
+
+    def _encode_segments(self, connection: sqlite3.Connection, item: SkillSnapshot) -> None:
+        assert self.vectorization is not None
+        record = SkillRecord(
+            skill_id=item.skill_id,
+            name=item.name,
+            description=item.description,
+            root_path=Path(item.relative_path).parent,
+            body=item.body,
+            content_hash=item.content_hash,
+            instruction_hash=item.instruction_hash,
+            behavior_hash=item.behavior_hash,
+            execution_hash=item.execution_hash,
+            hash_algorithm_revision=item.hash_algorithm_revision,
+            license=item.license,
+            compatibility=item.compatibility,
+            metadata=item.metadata,
+            allowed_tools=item.allowed_tools,
+            tools=item.tools,
+            permissions=item.permissions,
+            environments=item.environments,
+            inputs=item.inputs,
+            outputs=item.outputs,
+        )
+        sections = extract_skill_sections(record)
+        encoded = self.vectorization.encode_record(record, sections)
+        self.vectorization.replace_snapshot(
+            item.snapshot_id,
+            sections,
+            encoded,
+            connection=connection,
+        )
+        # Keep the v1 vectors table populated as a compatibility artifact for
+        # historical reads and older integrations. New retrieval uses the
+        # channel rows above and never mixes signatures implicitly.
+        legacy_rows = [
+            vector
+            for channels in encoded.values.values()
+            for channel in ("activation", "procedure", "constraint")
+            for vector in channels.get(channel, ())
+        ]
+        if legacy_rows:
+            self._save_vector(connection, item, legacy_rows[0])
+
+    def _try_encode_segments(self, connection: sqlite3.Connection, item: SkillSnapshot) -> None:
+        try:
+            self._encode_segments(connection, item)
+        except (EmbeddingUnavailable, ValueError) as error:
+            # Keep the parsed snapshot transaction, but leave dense rows absent
+            # so the analyzer can make the lexical fallback explicit.
+            self._mark_vectorization_degraded(error)
+
+    def _mark_vectorization_degraded(self, error: Exception) -> None:
+        reason = f"vectorizer encode failed; using lexical analysis ({type(error).__name__})"
+        if reason not in self._vectorization_warnings:
+            self._vectorization_warnings.append(reason)
+        if self.embedding is not None:
+            self.embedding.degraded_reason = reason
+            self.embedding.degraded_error = str(error)
 
     def _save_vector(self, connection: sqlite3.Connection, item: SkillSnapshot, vector) -> None:
         array = np.ascontiguousarray(np.asarray(vector, dtype=np.float32).reshape(-1))
         connection.execute(
             """INSERT INTO vectors (snapshot_id, model, dimensions, content_hash, vector, created_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(snapshot_id, model) DO UPDATE SET
+                   dimensions=excluded.dimensions,
+                   content_hash=excluded.content_hash,
+                   vector=excluded.vector,
+                   created_at=excluded.created_at""",
             (item.snapshot_id, self.embedding.model_id, int(array.size), item.content_hash, array.tobytes(),
              datetime.now(UTC).isoformat()),
         )

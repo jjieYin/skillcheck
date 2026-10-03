@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Annotated
 
 import typer
 
@@ -20,9 +19,9 @@ def build_scan_pipeline(config: Path | None):
 def register(app: typer.Typer) -> None:
     @app.command("scan")
     def scan(
-        path: Annotated[Path | None, typer.Argument()] = None,
-        config: Annotated[Path | None, typer.Option("--config")] = None,
-        as_json: Annotated[bool, typer.Option("--json")] = False,
+        path: Path = typer.Argument(None),
+        config: Path = typer.Option(None, "--config"),
+        as_json: bool = typer.Option(False, "--json"),
     ) -> None:
         try:
             result = build_scan_pipeline(config).run([path] if path is not None else [])

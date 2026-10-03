@@ -1,6 +1,7 @@
 from pathlib import Path
 
-from skillcheck.models import Severity
+from skillcheck.core.validation import CompositeSkillValidator
+from skillcheck.models import Finding, Severity
 from skillcheck.parser import parse_skill
 from skillcheck.skillspector import SkillSpectorAdapter
 from skillcheck.validators import BuiltinValidator
@@ -60,3 +61,48 @@ def test_skillspector_json_output_is_mapped(monkeypatch, tmp_path: Path) -> None
     findings = SkillSpectorAdapter(command="skillspector").scan(root)
     assert findings[0].rule_id == "SPC001"
     assert findings[0].severity == Severity.HIGH
+
+
+def test_official_frontmatter_and_body_rules_are_reported(tmp_path: Path) -> None:
+    root = tmp_path / "expected-name"
+    root.mkdir()
+    (root / "SKILL.md").write_text(
+        "---\nname: Bad Name\ndescription: " + ("x" * 1025) + "\nallowed-tools: {}\n---\n"
+        + "\n".join("step" for _ in range(501)),
+        encoding="utf-8",
+    )
+
+    findings = BuiltinValidator().scan(root, parse_skill(root))
+    rule_ids = {finding.rule_id for finding in findings}
+
+    assert {"FMT003", "FMT004", "FMT005", "FMT006", "QLT002"}.issubset(rule_ids)
+
+
+def test_missing_name_is_reported_even_when_parser_uses_directory_fallback(tmp_path: Path) -> None:
+    root = tmp_path / "directory-name"
+    root.mkdir()
+    (root / "SKILL.md").write_text("---\ndescription: present\n---\nA useful body.\n", encoding="utf-8")
+
+    findings = BuiltinValidator().scan(root, parse_skill(root))
+
+    assert any(finding.rule_id == "FMT001" for finding in findings)
+
+
+def test_composite_validator_merges_builtin_and_external_findings(tmp_path: Path) -> None:
+    root = write_skill(tmp_path / "safe", body="This is a sufficiently long safe body.")
+
+    class External:
+        def scan(self, path: Path):
+            return [
+                Finding(
+                    rule_id="EXT001",
+                    severity=Severity.LOW,
+                    message="external",
+                    evidence_path="SKILL.md",
+                    remediation="review",
+                )
+            ]
+
+    findings = CompositeSkillValidator(BuiltinValidator(), External()).scan(root, parse_skill(root))
+
+    assert any(finding.rule_id == "EXT001" for finding in findings)

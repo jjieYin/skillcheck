@@ -7,6 +7,7 @@ from skillcheck.governance.models import (
     EvidencePage,
     EvidenceSkill,
     Relation,
+    SkillFinding,
     SourcePreflight,
     SyncGroup,
     SyncGroupMember,
@@ -14,6 +15,7 @@ from skillcheck.governance.models import (
     SyncMemberRole,
     SyncPolicy,
 )
+from skillcheck.governance.policy import GovernancePolicy, embedding_signature
 from skillcheck.governance.sync_groups import SyncGroupService
 
 __all__ = [
@@ -24,7 +26,9 @@ __all__ = [
     "EvidencePage",
     "EvidenceSkill",
     "GovernanceAnalyzer",
+    "GovernancePolicy",
     "Relation",
+    "SkillFinding",
     "SourcePreflight",
     "SyncGroup",
     "SyncGroupMember",
@@ -32,4 +36,5 @@ __all__ = [
     "SyncGroupStatus",
     "SyncMemberRole",
     "SyncPolicy",
+    "embedding_signature",
 ]

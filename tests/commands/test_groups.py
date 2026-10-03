@@ -52,7 +52,7 @@ def test_groups_list_shows_status(tmp_path, monkeypatch) -> None:
     state, catalog = _configured(tmp_path)
     monkeypatch.setenv("SKILLCHECK_HOME", str(state))
     analyzer = GovernanceAnalyzer(catalog)
-    result = analyzer.analyze_library(limit=20)
+    result = analyzer.analyze_library()
     from skillcheck.governance.sync_groups import SyncGroupService
 
     group = next(item for item in result.groups if item.relation.value == "MIRRORED_COPY")
@@ -72,7 +72,7 @@ def test_groups_remove_deletes_only_metadata(tmp_path, monkeypatch) -> None:
     state, catalog = _configured(tmp_path)
     monkeypatch.setenv("SKILLCHECK_HOME", str(state))
     analyzer = GovernanceAnalyzer(catalog)
-    result = analyzer.analyze_library(limit=20)
+    result = analyzer.analyze_library()
     from skillcheck.governance.sync_groups import SyncGroupService
 
     candidate = next(item for item in result.groups if item.relation.value == "MIRRORED_COPY")

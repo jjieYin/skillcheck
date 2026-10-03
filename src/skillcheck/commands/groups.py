@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Annotated
 
 import typer
 
@@ -54,8 +53,8 @@ def groups_callback(ctx: typer.Context) -> None:
 
 @groups_app.command("list")
 def list_groups(
-    as_json: Annotated[bool, typer.Option("--json")] = False,
-    config: Annotated[Path | None, typer.Option("--config")] = None,
+    as_json: bool = typer.Option(False, "--json"),
+    config: Path = typer.Option(None, "--config"),
 ) -> None:
     """List sync groups and refresh their derived status."""
     try:
@@ -75,9 +74,9 @@ def list_groups(
 
 @groups_app.command("show")
 def show_group(
-    group_id: Annotated[str, typer.Argument()],
-    as_json: Annotated[bool, typer.Option("--json")] = False,
-    config: Annotated[Path | None, typer.Option("--config")] = None,
+    group_id: str = typer.Argument(...),
+    as_json: bool = typer.Option(False, "--json"),
+    config: Path = typer.Option(None, "--config"),
 ) -> None:
     """Show one sync group and its baseline members."""
     try:
@@ -97,9 +96,9 @@ def show_group(
 
 @groups_app.command("remove")
 def remove_group(
-    group_id: Annotated[str, typer.Argument()],
-    yes: Annotated[bool, typer.Option("--yes")] = False,
-    config: Annotated[Path | None, typer.Option("--config")] = None,
+    group_id: str = typer.Argument(...),
+    yes: bool = typer.Option(False, "--yes"),
+    config: Path = typer.Option(None, "--config"),
 ) -> None:
     """Remove only sync-group metadata; never remove Skill files."""
     try:
@@ -118,19 +117,19 @@ def remove_group(
 
 @groups_app.command("create")
 def create_group(
-    run_id: Annotated[str | None, typer.Option("--run-id")] = None,
-    candidate: Annotated[str | None, typer.Option("--candidate")] = None,
-    authority: Annotated[str | None, typer.Option("--authority")] = None,
-    name: Annotated[str | None, typer.Option("--name")] = None,
-    yes: Annotated[bool, typer.Option("--yes")] = False,
-    config: Annotated[Path | None, typer.Option("--config")] = None,
+    run_id: str = typer.Option(None, "--run-id"),
+    candidate: str = typer.Option(None, "--candidate"),
+    authority: str = typer.Option(None, "--authority"),
+    name: str = typer.Option(None, "--name"),
+    yes: bool = typer.Option(False, "--yes"),
+    config: Path = typer.Option(None, "--config"),
 ) -> None:
     """Create a monitor-only group from a MIRRORED_COPY analysis candidate."""
     try:
         _, governance, service, analyzer = _services(config)
         analysis = None
         if not run_id:
-            analysis = analyzer.analyze_library(limit=None, trigger_source="cli")
+            analysis = analyzer.analyze_library(trigger_source="cli")
             run_id = analysis.run_id
         context = governance.review_context(run_id)
         options = [item for item in context.groups if item.relation == "MIRRORED_COPY"]
